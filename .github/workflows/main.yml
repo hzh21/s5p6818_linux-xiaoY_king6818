@@ -1,0 +1,39 @@
+name: Build King6818 Docker Kernel
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu device-tree-compiler bc libssl-dev make
+
+      - name: Configure and Build
+        run: |
+          # 1. 使用基础配置
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- nanopi3_linux_defconfig
+          
+          # 2. 注入 Docker 必需的内核开关
+          ./scripts/config --enable CONFIG_OVERLAY_FS
+          ./scripts/config --enable CONFIG_CGROUP_DEVICE
+          ./scripts/config --enable CONFIG_MEMCG
+          ./scripts/config --enable CONFIG_MEMCG_SWAP
+          ./scripts/config --enable CONFIG_BLK_CGROUP
+          ./scripts/config --enable CONFIG_IKCONFIG
+          ./scripts/config --enable CONFIG_IKCONFIG_PROC
+          
+          # 3. 编译内核 Image 和我们刚刚写的 King6818 设备树
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs -j$(nproc)
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: King6818-Docker-Firmware
+          path: |
+            arch/arm64/boot/Image
+            arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
