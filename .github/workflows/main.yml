@@ -1,5 +1,5 @@
 name: Build King6818 Docker Kernel
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
   build:
@@ -11,7 +11,12 @@ jobs:
       - name: Install Toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu device-tree-compiler bc libssl-dev make
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            device-tree-compiler \
+            bc libssl-dev make \
+            bison flex libelf-dev \
+            pkg-config
 
       - name: Configure and Build
         run: |
@@ -27,13 +32,17 @@ jobs:
           ./scripts/config --enable CONFIG_IKCONFIG
           ./scripts/config --enable CONFIG_IKCONFIG_PROC
           
-          # 3. 编译内核 Image 和我们刚刚写的 King6818 设备树
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs -j$(nproc)
+          # 3. 核心修复：
+          # 使用 KCFLAGS 忽略老内核在现代 GCC 下的警告误报
+          # 同时编译 Image 和 dtbs
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+               KCFLAGS="-Wno-array-bounds -Wno-format-overflow" \
+               Image dtbs -j$(nproc)
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: King6818-Docker-Firmware
+          name: King6818-Kernel-Result
           path: |
             arch/arm64/boot/Image
             arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
