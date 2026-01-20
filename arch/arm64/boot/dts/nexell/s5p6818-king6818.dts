@@ -1,80 +1,87 @@
-/*
- * (C) Copyright 2026 Gemini / King6818 Porting Project
- * Based on FriendlyElec & Rongpin SDK
- */
-
 /dts-v1/;
 #include "s5p6818-king6818-common.dtsi"
 
 / {
-    model = "Rongpin King6818 Board";
-    compatible = "rongpin,king6818", "nexell,s5p6818";
+	model = "Rongpin King6818 Board";
+	compatible = "rongpin,king6818", "nexell,s5p6818";
 
-    /* 释放被占用的引脚资源，确保 I2C3 独占 GPIOC15/16 */
-    /delete-node/ onewire_pwm; 
+	/* 1. 补全 SoC 级别缺失的别名 */
+	aliases {
+		i2c3 = &i2c_3;
+		ethernet0 = &gmac0;
+	};
+
+	/* 2. 释放被 NanoPi3 默认占用的引脚资源，防止抢占 GPIOC15/16 */
+	/delete-node/ onewire_pwm; 
 };
 
-&mach {
-    hwrev = <1>;
-    model = "King6818";
+/* 3. 补全 SoC 级 .dtsi 中缺失的硬件 I2C3 控制器定义 */
+&soc {
+	i2c_3: i2c@c00a7000 {
+		compatible = "nexell,s5p6818-i2c";
+		reg = <0xc00a7000 0x100>;
+		interrupts = <0 47 0>;    /* I2C3 中断号 */
+		clock-names = "i2c";
+		clocks = <&pclk>;         /* 引用系统外设时钟 */
+		samsung,i2c-sda-delay = <100>;
+		samsung,i2c-max-bus-freq = <100000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c3_pins>;
+		status = "okay";
+
+		/* 4. 在 I2C3 总线下挂载 AXP228 电源管理芯片 */
+		axp228@34 {
+			compatible = "x-powers,axp228";
+			reg = <0x34>;
+			status = "okay";
+			interrupt-parent = <&alive_0>;
+			interrupts = <4 2>; /* 对应 AXP_IRQ 引脚 */
+
+			regulators {
+				/* DCDC2 负责给 CPU (VDD_ARM) 供电，是防止黑屏的核心 */
+				VCC1P1_ARM_PMIC: axp22_dcdc2 {
+					regulator-name = "axp228_1p1_arm";
+					regulator-min-microvolt = <600000>;
+					regulator-max-microvolt = <1540000>;
+					regulator-always-on;
+					regulator-boot-on;
+				};
+				/* 其余电压节点会从 common.dtsi 中继承 */
+			};
+		};
+	};
 };
 
-/* 1. 修复网卡：荣品 King6818 的 PHY 地址必须是 3 */
+/* 5. 修复网卡：荣品 King6818 硬件指定的 PHY 地址必须是 3 */
 &gmac0 {
-    status = "okay";
-    snps,phy-addr = <3>;
-    mdio {
-        #address-cells = <1>;
-        #size-cells = <0>;
-        ethernet_phy: ethernet-phy@3 {
-            reg = <3>;
-        };
-    };
+	status = "okay";
+	snps,phy-addr = <3>;
+	mdio {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		ethernet_phy: ethernet-phy@3 {
+			reg = <3>;
+		};
+	};
 };
 
-/* 2. 修复电源：禁用原有模拟 I2C，改用硬件 I2C3 驱动 AXP228 */
+/* 6. 强制将物理引脚 C15/C16 设置为硬件 I2C 模式 (ALT1/FUNC1) */
+&pinctrl_0 {
+	i2c3_pins: i2c3-pins {
+		nexell,pins = "gpioc-15", "gpioc-16";
+		nexell,pin-function = <1>; /* 对应 FUNC1，即硬件 I2C 模式 */
+		nexell,pin-pull = <2>;     /* I2C 总线必须开启上拉电阻 */
+		nexell,pin-strength = <0>;
+	};
+};
+
+/* 7. 禁用 NanoPi3 默认的模拟 I2C，防止与上述硬件 I2C3 冲突 */
 /delete-node/ &i2c3_gpio; 
 
-&i2c_3 {
-    status = "okay";
-    samsung,i2c-max-bus-freq = <100000>;
-    pinctrl-names = "default";
-    pinctrl-0 = <&i2c3_pins>; /* 引用下方定义的 ALT1 模式 */
-
-    #address-cells = <1>;
-    #size-cells = <0>;
-
-    axp228@34 {
-        compatible = "x-powers,axp228";
-        reg = <0x34>;
-        status = "okay";
-        interrupt-parent = <&alive_0>;
-        interrupts = <4 IRQ_TYPE_EDGE_FALLING>;
-        
-        /* 电压配置保持 common 中的默认值即可 */
-    };
-};
-
-/* 3. 修正引脚功能：将 C15/C16 切换为硬件 I2C3 模式 (FUNC1) */
-&pinctrl@C0010000 {
-    i2c3_pins: i2c3-pins {
-        nexell,pins = "gpioc-15", "gpioc-16";
-        nexell,pin-function = <1>; /* 对应荣品源码中的 NX_PIN_FUNC1 */
-        nexell,pin-pull = <2>;     /* I2C 必须开启上拉 */
-        nexell,pin-strength = <0>;
-    };
-};
-
 &dw_mmc_1 {
-    status = "okay";
-};
-
-&simple_card {
-    simple-audio-card,dai-link@0 {
-        hp-det-gpio = <&gpio_b 27 0>;
-    };
+	status = "okay";
 };
 
 &spi_0 {
-    /delete-node/ fbtft@0;
+	/delete-node/ fbtft@0;
 };
