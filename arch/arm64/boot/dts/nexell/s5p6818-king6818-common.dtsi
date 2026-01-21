@@ -75,7 +75,7 @@
 	};
 };
 
-/* 在根节点外追加 AXP228 逻辑 */
+/* 在文件最末尾追加：带标签的完整 AXP228 定义 */
 &i2c_3 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&i2c3_pins>;
@@ -84,13 +84,36 @@
 		compatible = "x-powers,axp228";
 		reg = <0x34>;
 		status = "okay";
+
 		regulators {
-			vdd_arm: axp22_dcdc2 {
-				regulator-name = "vdd_arm";
+			/* 补全缺失的标签定义，供内核其他驱动引用 */
+			VCC_DCDC1: axp22_dcdc1 {
+				regulator-name = "axp228_dcdc1";
+				regulator-always-on;
+			};
+
+			VCC1P1_ARM_PMIC: axp22_dcdc2 {
+				regulator-name = "axp228_dcdc2";
 				regulator-min-microvolt = <600000>;
 				regulator-max-microvolt = <1540000>;
 				regulator-always-on;
 				regulator-boot-on;
+			};
+
+			VCC1P0_CORE_PMIC: axp22_dcdc3 {
+				regulator-name = "axp228_dcdc3";
+				regulator-always-on;
+			};
+
+			VCC_DCDC5: axp22_dcdc5 {
+				regulator-name = "axp228_dcdc5";
+				regulator-always-on;
+			};
+
+			/* 补全 LDO 标签 */
+			VCC_ALDO1: axp22_aldo1 {
+				regulator-name = "axp228_aldo1";
+				regulator-always-on;
 			};
 		};
 	};
