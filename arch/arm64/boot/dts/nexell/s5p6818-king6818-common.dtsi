@@ -816,23 +816,21 @@
 	};
 };
 
-&i2c_3 {
+/* 删掉之前的 &i2c_3 块，直接把这段贴在文件最末尾 */
+&{/soc/i2c@c00a7000} {
     status = "okay";
     samsung,i2c-max-bus-freq = <100000>;
-
     #address-cells = <1>;
     #size-cells = <0>;
 
     axp228@34 {
         compatible = "x-powers,axp228";
         reg = <0x34>;
-        /* 这里的 IRQ 宏需要确保文件头部有 #include <dt-bindings/interrupt-controller/irq.h> */
-        interrupt-parent = <&alive_0>;
-        interrupts = <4 IRQ_TYPE_EDGE_FALLING>; 
-        
+        status = "okay";
+
         regulators {
-            VCC1P1_ARM_PMIC: axp22_dcdc2 {
-                regulator-name = "axp228_1p1_arm";
+            vdd_arm: axp22_dcdc2 {
+                regulator-name = "vdd_arm";
                 regulator-min-microvolt = <600000>;
                 regulator-max-microvolt = <1540000>;
                 regulator-always-on;
@@ -840,4 +838,4 @@
             };
         };
     };
-}; /* 这一行结束后，文件就彻底结束了 */
+}; /* 必须有这个分号 */
