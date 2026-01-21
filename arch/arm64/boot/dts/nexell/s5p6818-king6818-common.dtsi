@@ -282,9 +282,9 @@
 			};
 		};
 
-		&i2c_3 {
+&i2c_3 {
     status = "okay";
-    samsung,i2c-max-bus-freq = <100000>; /* 100kHz */
+    samsung,i2c-max-bus-freq = <100000>;
 
     #address-cells = <1>;
     #size-cells = <0>;
@@ -292,11 +292,11 @@
     axp228@34 {
         compatible = "x-powers,axp228";
         reg = <0x34>;
+        /* 这里的 IRQ 宏需要确保文件头部有 #include <dt-bindings/interrupt-controller/irq.h> */
         interrupt-parent = <&alive_0>;
-        interrupts = <4 IRQ_TYPE_EDGE_FALLING>; /* 保持中断号与 NanoPi 一致，通常通用 */
+        interrupts = <4 IRQ_TYPE_EDGE_FALLING>; 
         
         regulators {
-            /* 这里的 DCDC1-5 电压数值，请务必参考荣品 SDK 中 axp22x 相关的定义 */
             VCC1P1_ARM_PMIC: axp22_dcdc2 {
                 regulator-name = "axp228_1p1_arm";
                 regulator-min-microvolt = <600000>;
@@ -304,10 +304,9 @@
                 regulator-always-on;
                 regulator-boot-on;
             };
-            /* 其他 LDO 和 DCDC 节点可以沿用 NanoPi3 的定义 */
         };
     };
-};
+}; /* 这一行结束后，文件就彻底结束了 */
 
 			axp228@34 {
 				compatible = "x-powers,axp228";
