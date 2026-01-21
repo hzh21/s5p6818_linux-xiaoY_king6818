@@ -52,6 +52,15 @@
 			};
 		};
 
+		pinctrl@c0010000 {
+			i2c3_pins: i2c3-pins {
+				nexell,pins = "gpioc-15", "gpioc-16";
+				nexell,pin-function = <1>;
+				nexell,pin-pull = <2>;
+				nexell,pin-strength = <0>;
+			};
+		};
+
 		dw_mmc_2:dw_mmc@c0069000 {
 			bus-width = <4>;
 			cap-mmc-highspeed;
