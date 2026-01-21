@@ -816,26 +816,26 @@
 	};
 };
 
-/* 删掉之前的 &i2c_3 块，直接把这段贴在文件最末尾 */
-&{/soc/i2c@c00a7000} {
-    status = "okay";
-    samsung,i2c-max-bus-freq = <100000>;
-    #address-cells = <1>;
-    #size-cells = <0>;
+/* 在根节点外追加 AXP228 逻辑 */
+&i2c_3 {
+	status = "okay";
+	samsung,i2c-max-bus-freq = <100000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
 
-    axp228@34 {
-        compatible = "x-powers,axp228";
-        reg = <0x34>;
-        status = "okay";
+	axp228@34 {
+		compatible = "x-powers,axp228";
+		reg = <0x34>;
+		status = "okay";
 
-        regulators {
-            vdd_arm: axp22_dcdc2 {
-                regulator-name = "vdd_arm";
-                regulator-min-microvolt = <600000>;
-                regulator-max-microvolt = <1540000>;
-                regulator-always-on;
-                regulator-boot-on;
-            };
-        };
-    };
-}; /* 必须有这个分号 */
+		regulators {
+			vdd_arm: axp22_dcdc2 {
+				regulator-name = "vdd_arm";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <1540000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+		};
+	};
+};
