@@ -32,7 +32,7 @@
 			uart0_clk: uart0-clk { 
 				compatible = "fixed-clock";
 				#clock-cells = <0>;
-				clock-frequency = <147456000>; /* 修正为标准的晶振倍频 */
+				clock-frequency = <147500000>; /* 修正为标准的晶振倍频 */
 			};
 		};
 
