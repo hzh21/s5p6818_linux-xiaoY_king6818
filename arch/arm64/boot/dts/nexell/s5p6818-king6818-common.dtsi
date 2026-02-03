@@ -76,34 +76,36 @@
 			};
 		};
 
-		dw_mmc_0:dw_mmc@c0062000 {
-			num-slots = <1>;
-			bus-width = <4>;
-			cap-sd-highspeed;
-			
-			/* 修正 1：强制认为卡已插入，且禁用写保护检测 */
-			broken-cd;
-			disable-wp; 
-			
-			status = "okay";
+		/* 1. 在根节点下添加 aliases，强行把这个控制器固定为 mmc0 */
+aliases {
+    ethernet0 = &gmac0;
+    i2c3 = &i2c_3;
+    mmc0 = &dw_mmc_0;  /* 强行霸占第一个名字 */
+};
 
-			/* 修正 2：降低频率到更稳的 40MHz。
-			   100MHz 显然让你的驱动感到痛苦，50MHz 也不稳 */
-			clock-frequency = <40000000>;
-			
-			clocks = <&pclk>, <&pclk>;
-			clock-names = "biu", "ciu";
+/* 2. 修改 dw_mmc_0 节点，降低频率并调整采样点 */
+dw_mmc_0:dw_mmc@c0062000 {
+    num-slots = <1>;
+    bus-width = <4>;
+    cap-sd-highspeed;
+    broken-cd;
+    disable-wp;
+    status = "okay";
 
-			/* 修正 3：调整采样相位。
-			   如果 50MHz 报错 -110，通常是采样点偏了。
-			   我们把 shift 值微调一下 */
-			nexell,drive_dly = <0x0>;
-			nexell,drive_shift = <0x01>; 
-			nexell,sample_dly = <0x00>;
-			nexell,sample_shift = <0x02>;
-			
-			fifo-depth = <0x80>;
-		};
+    /* 修正频率：25MHz 是最不容易报错的基准频率 */
+    clock-frequency = <25000000>;
+    clocks = <&pclk>, <&pclk>;
+    clock-names = "biu", "ciu";
+
+    /* 修正采样时序：这是解决 -110 报错的核心 */
+    /* 我们把驱动延时设为 0，采样延时加大，让信号在最稳定的时候被读取 */
+    nexell,drive_dly = <0x0>;
+    nexell,drive_shift = <0x0>; 
+    nexell,sample_dly = <0x0>;
+    nexell,sample_shift = <0x2>; /* 尝试 0x2 或 0x3，通常 0x2 在低频下最稳 */
+    
+    fifo-depth = <0x80>;
+};
 
 		gmac0:ethernet@c0060000 {
 			pinctrl-0 = <&gmac_pins>;
