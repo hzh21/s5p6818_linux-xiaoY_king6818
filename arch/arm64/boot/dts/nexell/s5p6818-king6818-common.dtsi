@@ -82,10 +82,14 @@
 			bus-width = <4>;
 			cap-sd-highspeed;
 			cd-gpios = <&alive_0 1 0>;
-			/* 关键修正：添加频率和时钟引用 */
+			
+			/* 核心修正：指定频率，同时去掉那个报错的 clk_alv 引用 */
 			clock-frequency = <50000000>;
-			clocks = <&clk_alv 20>, <&clk_alv 21>;
+			
+			/* 尝试使用系统全局 PCLK，这是 S5P6818 最通用的时钟引用方式 */
+			clocks = <&pclk>, <&pclk>;
 			clock-names = "biu", "ciu";
+			
 			fifo-depth = <0x80>;
 			status = "okay";
 		};
