@@ -28,7 +28,8 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x40000000 0x3db00000>;
+		/* 修正 1：将 0x3db00000 改为 0x80000000，取回完整的 2GB 内存 */
+		reg = <0x40000000 0x80000000>;
 	};
 
 	aliases {
@@ -40,17 +41,14 @@
 		#include "s5p6818-pinctrl.dtsi"
 
 		clocks {
-			/* 修正波特率计算的基础时钟：147.456MHz 对应标准晶振倍频 */
 			uart0:uart@c00a9000 { clock-frequency = <147456000>; };
 			uart1:uart@c00a8000 { clock-frequency = <147456000>; };
 			uart2:uart@c00aa000 { clock-frequency = <147456000>; };
 			uart3:uart@c00ab000 { clock-frequency = <147456000>; };
 		};
 
-		/* 串口定义 */
 		serial0:serial@c00a1000 { status ="okay"; };
 
-		/* 修正：使用原生 I2C3 控制器而非模拟 GPIO */
 		i2c_3: i2c@c00a7000 {
 			compatible = "nexell,s5p6818-i2c";
 			reg = <0xc00a7000 0x100>;
@@ -73,17 +71,22 @@
 					VCC1P1_ARM_PMIC: axp22_dcdc2 { PMIC_PDATA_INIT(13, "axp228_1p1_arm", 600000, 1540000, 1, 1, 1200000, 1, 0xF) };
 					VCC1P0_CORE_PMIC: axp22_dcdc3 { PMIC_PDATA_INIT(14, "axp228_1p0_core", 600000, 1860000, 1, 1, 1200000, 1, 0xF) };
 					VCC_DCDC5: axp22_dcdc5 { PMIC_PDATA_INIT(16, "axp228_1p5_ddr", 1000000, 2550000, 1, 1, 1500000, 1, 0xF) };
-					/* 保留 LDO 定义以满足驱动依赖 */
 					VCC_ALDO1: axp22_aldo1 { PMIC_PDATA_INIT( 1, "axp228_3p3_alive", 700000, 3300000, 1, 1, 3300000, 1, 0xF) };
 				};
 			};
 		};
 
+		/* 修正 2：补全 SD 卡控制器参数，解决 Bus Speed 报错 */
 		dw_mmc_0:dw_mmc@c0062000 {
 			num-slots = <1>;
 			bus-width = <4>;
 			cap-sd-highspeed;
 			cd-gpios = <&alive_0 1 0>;
+			/* 关键修正：添加频率和时钟引用 */
+			clock-frequency = <50000000>;
+			clocks = <&clk_alv 20>, <&clk_alv 21>;
+			clock-names = "biu", "ciu";
+			fifo-depth = <0x80>;
 			status = "okay";
 		};
 
