@@ -17,7 +17,7 @@
  */
 
 /dts-v1/;
-#include "s5p6818-nanopi3-common.dtsi"
+#include "s5p6818-king6818-common.dtsi"
 
 / {
 	model = "FriendlyElec NanoPC-T3";
