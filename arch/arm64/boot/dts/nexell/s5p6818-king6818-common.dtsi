@@ -36,8 +36,8 @@
 		nx,sleep_slots = <_slp_slots>;
 
 / {
-	model = "FriendlyElec boards based on Nexell s5p6818";
-	compatible = "friendlyelec,nanopi3",
+	model = "RongPin king6818";
+	compatible = "RongPin,king6818",
 		   "nexell,s5p6818";
 
 	memory {
@@ -263,7 +263,7 @@
 			#address-cells = <0x1>;
 			#size-cells = <0x0>;
 
-			snps,phy-addr = <3>;
+			snps,phy-addr = <4>;
 			snps,reset-gpio = <&gpio_e 22 0>;
 			snps,reset-active-low;
 			snps,reset-delays-us = <0 10000 30000>;
@@ -272,8 +272,8 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				ethernet_phy: ethernet-phy@3 {
-					reg = <3>;
+				ethernet_phy: ethernet-phy@4 {
+					reg = <4>;
 					fixed-link {
 						speed = <1000>;
 						full-duplex;
