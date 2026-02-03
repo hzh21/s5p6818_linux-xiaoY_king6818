@@ -80,22 +80,28 @@
 			num-slots = <1>;
 			bus-width = <4>;
 			cap-sd-highspeed;
-			cd-gpios = <&alive_0 1 0>;
-			cd-inverted;
+			
+			/* 修正 1：强制认为卡已插入，且禁用写保护检测 */
+			broken-cd;
+			disable-wp; 
+			
 			status = "okay";
 
-			/* 核心修正 1：使用原厂给的 100MHz 频率 */
-			clock-frequency = <100000000>;
+			/* 修正 2：降低频率到更稳的 40MHz。
+			   100MHz 显然让你的驱动感到痛苦，50MHz 也不稳 */
+			clock-frequency = <40000000>;
 			
-			/* 核心修正 2：使用你的 I2C 节点里证明有效的 pclk，解决编译错误 */
 			clocks = <&pclk>, <&pclk>;
 			clock-names = "biu", "ciu";
 
-			/* 核心修正 3：保留原厂的采样和驱动延时，确保读写稳定 */
+			/* 修正 3：调整采样相位。
+			   如果 50MHz 报错 -110，通常是采样点偏了。
+			   我们把 shift 值微调一下 */
 			nexell,drive_dly = <0x0>;
-			nexell,drive_shift = <0x02>;
+			nexell,drive_shift = <0x01>; 
 			nexell,sample_dly = <0x00>;
-			nexell,sample_shift = <0x01>;
+			nexell,sample_shift = <0x02>;
+			
 			fifo-depth = <0x80>;
 		};
 
