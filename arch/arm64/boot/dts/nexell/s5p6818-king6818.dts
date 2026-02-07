@@ -42,53 +42,62 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
-/* 禁用友善之臂默认的模拟总线 */
+/* 1. 禁用原有的模拟总线 */
 /delete-node/ &i2c3_gpio;
 
+/* 2. 在硬件 I2C0 下重建 PMIC 并恢复 Labels */
 &i2c_0 {
-    status = "okay";
-    clock-frequency = <400000>;
+	status = "okay";
+	samsung,i2c-max-bus-freq = <400000>;
 
-    axp228: pmic@34 {
-        compatible = "x-powers,axp228";
-        reg = <0x34>;
-        interrupt-parent = <&gpio_b>;
-        interrupts = <28 IRQ_TYPE_LEVEL_LOW>;
+	axp22x: pmic@34 {
+		compatible = "x-powers,axp228";
+		reg = <0x34>;
+		interrupt-parent = <&gpio_b>;
+		interrupts = <28 8>;
 
-        regulators {
-            /* CPU 核心电压：解决 DVFS 报错 */
-            vdd_arm_axp: dcdc2 {
-                regulator-name = "vdd_arm";
-                regulator-min-microvolt = <1000000>;
-                regulator-max-microvolt = <1300000>;
-                regulator-boot-on;
-                regulator-always-on;
-            };
+		regulators {
+			/* 恢复 VCC_DCDC1 标签 */
+			VCC_DCDC1: axp22_dcdc1 {
+				regulator-name = "axp228_3p3_sys";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
 
-            /* 内存电压：确保 2GB 稳定运行 */
-            vcc_ddr: dcdc5 {
-                regulator-name = "vcc_ddr";
-                regulator-min-microvolt = <1500000>; /* 1.5V */
-                regulator-max-microvolt = <1500000>;
-                regulator-boot-on;
-                regulator-always-on;
-            };
+			/* 恢复 VCC1P1_ARM_PMIC 标签，这是 CPU 调频的关键 */
+			VCC1P1_ARM_PMIC: axp22_dcdc2 {
+				regulator-name = "vdd_arm";
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
 
-            /* Wi-Fi 电源：开启硬件供电 */
-            vcc_wifi: eldo2 {
-                regulator-name = "vcc_wifi";
-                regulator-min-microvolt = <3300000>;
-                regulator-max-microvolt = <3300000>;
-                regulator-boot-on;
-            };
+			/* DCDC5: 内存电压 */
+			vcc_ddr: axp22_dcdc5 {
+				regulator-name = "vcc_ddr";
+				regulator-min-microvolt = <1500000>;
+				regulator-max-microvolt = <1500000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
 
-            /* 音频供电：修复 ES8316 */
-            vcc_audio: aldo2 {
-                regulator-name = "vcc_audio";
-                regulator-min-microvolt = <1800000>;
-                regulator-max-microvolt = <1800000>;
-                regulator-boot-on;
-            };
-        };
-    };
+			/* 其他 LDO 保持现状，根据需要添加 Label */
+			eldo2 {
+				regulator-name = "vcc_wifi";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+			};
+		};
+	};
+};
+
+/* 3. 修复 DVFS (CPU调频) 节点的引用错误 */
+&dvfs {
+	/* 荣品板子没有 SPU1705 芯片，所以我们要把它的电源引用指向 AXP228 */
+	vdd_arm_spu-supply = <&VCC1P1_ARM_PMIC>;
+	vdd_arm_axp-supply = <&VCC1P1_ARM_PMIC>;
 };
