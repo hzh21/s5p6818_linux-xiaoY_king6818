@@ -42,3 +42,29 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
+/* 1. 禁用友善之臂默认的模拟 I2C 总线（避免冲突） */
+/delete-node/ &i2c_gpio_3; 
+
+/* 2. 将 AXP228 挂载到荣品物理连接的硬件 I2C0 上 */
+&i2c_0 {
+	status = "okay";
+	clock-frequency = <400000>;
+
+	axp22x: pmic@34 {
+		compatible = "x-powers,axp228";
+		reg = <0x34>;
+		interrupt-parent = <&gpio_b>;
+		interrupts = <28 8>; /* 荣品通常使用 GPIOB28 作为中断 */
+
+		regulators {
+			/* 这是解决 CPU 调频报错的关键 */
+			vdd_arm: dcdc2 {
+				regulator-name = "vdd_arm";
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1300000>;
+				regulator-always-on;
+			};
+			/* ... 如果需要音频供电，还需定义对应的 LDO */
+		};
+	};
+};
