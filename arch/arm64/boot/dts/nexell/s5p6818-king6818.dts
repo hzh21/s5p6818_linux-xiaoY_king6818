@@ -42,62 +42,72 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
-/* 1. 禁用原有的模拟总线 */
-/delete-node/ &i2c3_gpio;
+/* 定义荣品特有的模拟总线 3，用于挂载 AXP228 */
+	i2c3_gpio: i2c-gpio-3 {
+		compatible = "i2c-gpio";
+		/* 根据 RongPin 习惯推测使用 D0/D1 模拟，若不通请查阅 board.c 中的 i2c_gpio3_data */
+		gpios = <&gpio_d 1 0    /* SDA: GPIOD1 */
+			     &gpio_d 0 0>;  /* SCL: GPIOD0 */
+		i2c-gpio,delay-us = <5>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
 
-/* 2. 在硬件 I2C0 下重建 PMIC 并恢复 Labels */
-&i2c_0 {
-	status = "okay";
-	samsung,i2c-max-bus-freq = <400000>;
+		axp228: pmic@34 {
+			compatible = "x-powers,axp228";
+			reg = <0x34>;
+			/* 对应荣品定义：#define CFG_GPIO_PMIC_INTR (PAD_GPIO_ALV + 4) */
+			interrupt-parent = <&alive_0>;
+			interrupts = <4 IRQ_TYPE_LEVEL_LOW>;
 
-	axp22x: pmic@34 {
-		compatible = "x-powers,axp228";
-		reg = <0x34>;
-		interrupt-parent = <&gpio_b>;
-		interrupts = <28 8>;
+			regulators {
+				/* DCDC2: CPU 核心电压，荣品预设 1.1V */
+				vdd_arm: dcdc2 {
+					regulator-name = "vdd_arm";
+					regulator-min-microvolt = <1100000>;
+					regulator-max-microvolt = <1300000>;
+					regulator-always-on;
+					regulator-boot-on;
+				};
 
-		regulators {
-			/* 恢复 VCC_DCDC1 标签 */
-			VCC_DCDC1: axp22_dcdc1 {
-				regulator-name = "axp228_3p3_sys";
-				regulator-min-microvolt = <3300000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
-				regulator-boot-on;
-			};
+				/* DCDC5: 内存电压，荣品 2GB 版必须为 1.5V */
+				vcc_ddr: dcdc5 {
+					regulator-name = "vcc_ddr";
+					regulator-min-microvolt = <1500000>;
+					regulator-max-microvolt = <1500000>;
+					regulator-always-on;
+					regulator-boot-on;
+				};
 
-			/* 恢复 VCC1P1_ARM_PMIC 标签，这是 CPU 调频的关键 */
-			VCC1P1_ARM_PMIC: axp22_dcdc2 {
-				regulator-name = "vdd_arm";
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <1300000>;
-				regulator-always-on;
-				regulator-boot-on;
-			};
+				/* ELDO2: Wi-Fi 模块供电 3.3V */
+				vcc_wifi: eldo2 {
+					regulator-name = "vcc_wifi";
+					regulator-min-microvolt = <3300000>;
+					regulator-max-microvolt = <3300000>;
+					regulator-boot-on;
+				};
 
-			/* DCDC5: 内存电压 */
-			vcc_ddr: axp22_dcdc5 {
-				regulator-name = "vcc_ddr";
-				regulator-min-microvolt = <1500000>;
-				regulator-max-microvolt = <1500000>;
-				regulator-always-on;
-				regulator-boot-on;
-			};
-
-			/* 其他 LDO 保持现状，根据需要添加 Label */
-			eldo2 {
-				regulator-name = "vcc_wifi";
-				regulator-min-microvolt = <3300000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-boot-on;
+				/* ALDO2: 音频芯片模拟供电 1.8V */
+				vcc_audio: aldo2 {
+					regulator-name = "vcc_audio";
+					regulator-min-microvolt = <1800000>;
+					regulator-max-microvolt = <1800000>;
+					regulator-boot-on;
+				};
 			};
 		};
 	};
 };
 
-/* 3. 修复 DVFS (CPU调频) 节点的引用错误 */
-&dvfs {
-	/* 荣品板子没有 SPU1705 芯片，所以我们要把它的电源引用指向 AXP228 */
-	vdd_arm_spu-supply = <&VCC1P1_ARM_PMIC>;
-	vdd_arm_axp-supply = <&VCC1P1_ARM_PMIC>;
+/* 修正 I2C0 引脚：荣品物理连接在 D2/D3，而非友善的 D1/D2 */
+&i2c_0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_rongpin>; /* 注意：需在 pinctrl.dtsi 中定义此组引脚 */
+	status = "okay";
+};
+/* 禁用友善默认的模拟总线定义，避免冲突 */
+/delete-node/ &i2c3_gpio;
+
+&spi_0 {
+	/delete-node/ fbtft@0;
 };
