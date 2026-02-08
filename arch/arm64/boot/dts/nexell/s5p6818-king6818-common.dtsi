@@ -225,7 +225,6 @@
 				>;
 			i2c-gpio,delay-us = <10>;      /* 降频至 50KHz，确保 AXP228 能跟上时序 */
     		i2c-gpio,timeout-ms = <100>;   /* 增加超时等待 */
-			i2c-gpio,delay-us = <5>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "okay";
