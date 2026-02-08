@@ -220,8 +220,8 @@
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
 			/* 对应荣品定义：GPIOD1(SDA), GPIOD0(SCL) */
-			gpios = <&gpio_d 1 0	/* sda */
-				     &gpio_d 0 0	/* scl */
+			gpios = <&gpio_d 3 0	/* sda */
+				     &gpio_d 2 0	/* scl */
 				>;
 			i2c-gpio,delay-us = <10>;      /* 降频至 50KHz，确保 AXP228 能跟上时序 */
     		i2c-gpio,timeout-ms = <100>;   /* 增加超时等待 */
