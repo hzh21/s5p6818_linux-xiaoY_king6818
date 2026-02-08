@@ -107,7 +107,3 @@
 };
 /* 禁用友善默认的模拟总线定义，避免冲突 */
 /delete-node/ &i2c3_gpio;
-
-&spi_0 {
-	/delete-node/ fbtft@0;
-};
