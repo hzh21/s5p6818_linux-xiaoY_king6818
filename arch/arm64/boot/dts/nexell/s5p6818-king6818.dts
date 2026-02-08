@@ -42,68 +42,70 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
-/* 定义荣品特有的模拟总线 3，用于挂载 AXP228 */
-	i2c3_gpio: i2c-gpio-3 {
-		compatible = "i2c-gpio";
-		/* 根据 RongPin 习惯推测使用 D0/D1 模拟，若不通请查阅 board.c 中的 i2c_gpio3_data */
-		gpios = <&gpio_d 1 0    /* SDA: GPIOD1 */
-			     &gpio_d 0 0>;  /* SCL: GPIOD0 */
-		i2c-gpio,delay-us = <5>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-		status = "okay";
+/* 2. 修正 I2C0 引脚：解决音频芯片 ES8316 无法识别 */
+&i2c_0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_rongpin>; /* 引用我们在 pinctrl.dtsi 里定义的 D2/D3 */
+	status = "okay";
+};
 
-		axp228: pmic@34 {
-			compatible = "x-powers,axp228";
-			reg = <0x34>;
-			/* 对应荣品定义：#define CFG_GPIO_PMIC_INTR (PAD_GPIO_ALV + 4) */
-			interrupt-parent = <&alive_0>;
-			interrupts = <4 IRQ_TYPE_LEVEL_LOW>;
+/* 3. 彻底重写模拟总线 3：解决电源管理 AXP228 报错 */
+&i2c3_gpio {
+	/* 首先删除友善之臂原本在 dtsi 里的子节点，防止冲突 */
+	/delete-node/ spu1705@2d;
+	/delete-node/ axp228@34;
 
-			regulators {
-				/* DCDC2: CPU 核心电压，荣品预设 1.1V */
-				vdd_arm: dcdc2 {
-					regulator-name = "vdd_arm";
-					regulator-min-microvolt = <1100000>;
-					regulator-max-microvolt = <1300000>;
-					regulator-always-on;
-					regulator-boot-on;
-				};
+	/* 切换为荣品的物理引脚：D1(SDA) 和 D0(SCL) */
+	gpios = <&gpio_d 1 0 
+	         &gpio_d 0 0>;
+	
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c3_pins_rongpin>; /* 引用 D1/D0 映射 */
+	status = "okay";
 
-				/* DCDC5: 内存电压，荣品 2GB 版必须为 1.5V */
-				vcc_ddr: dcdc5 {
-					regulator-name = "vcc_ddr";
-					regulator-min-microvolt = <1500000>;
-					regulator-max-microvolt = <1500000>;
-					regulator-always-on;
-					regulator-boot-on;
-				};
+	axp228: pmic@34 {
+		compatible = "x-powers,axp228";
+		reg = <0x34>;
+		interrupt-parent = <&alive_0>;
+		interrupts = <4 8>; /* Alive-4, 低电平触发 */
+		
+		pinctrl-names = "default";
+		pinctrl-0 = <&pmic_irq_pin>;
 
-				/* ELDO2: Wi-Fi 模块供电 3.3V */
-				vcc_wifi: eldo2 {
-					regulator-name = "vcc_wifi";
-					regulator-min-microvolt = <3300000>;
-					regulator-max-microvolt = <3300000>;
-					regulator-boot-on;
-				};
+		regulators {
+			/* DCDC2: CPU 核心电压，解决 DVFS 报错 */
+			vdd_arm: dcdc2 {
+				regulator-name = "vdd_arm";
+				regulator-min-microvolt = <1100000>; /* 1.1V */
+				regulator-max-microvolt = <1300000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
 
-				/* ALDO2: 音频芯片模拟供电 1.8V */
-				vcc_audio: aldo2 {
-					regulator-name = "vcc_audio";
-					regulator-min-microvolt = <1800000>;
-					regulator-max-microvolt = <1800000>;
-					regulator-boot-on;
-				};
+			/* DCDC5: 内存电压，2GB 稳定的生命线 */
+			vcc_ddr: dcdc5 {
+				regulator-name = "vcc_ddr";
+				regulator-min-microvolt = <1500000>; /* 1.5V */
+				regulator-max-microvolt = <1500000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			/* ELDO2: Wi-Fi 模块供电 3.3V */
+			vcc_wifi: eldo2 {
+				regulator-name = "vcc_wifi";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+			};
+
+			/* ALDO2: 音频芯片模拟供电 1.8V */
+			vcc_audio: aldo2 {
+				regulator-name = "vcc_audio";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
 			};
 		};
 	};
 };
-
-/* 修正 I2C0 引脚：荣品物理连接在 D2/D3，而非友善的 D1/D2 */
-&i2c_0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c0_pins_rongpin>; /* 注意：需在 pinctrl.dtsi 中定义此组引脚 */
-	status = "okay";
-};
-/* 禁用友善默认的模拟总线定义，避免冲突 */
-/delete-node/ &i2c3_gpio;
