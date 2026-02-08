@@ -42,56 +42,59 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
-/* 2. 修正 I2C0 引脚：解决音频芯片 ES8316 无法识别 */
+/* 2. 修正硬件 I2C0 - 先写属性，再处理内部节点 */
 &i2c_0 {
+	/* 属性在前 */
 	pinctrl-names = "default";
-	pinctrl-0 = <&i2c0_pins_rongpin>; /* 引用我们在 pinctrl.dtsi 里定义的 D2/D3 */
+	pinctrl-0 = <&i2c0_pins_rongpin>; 
 	status = "okay";
+
+	/* 如果 i2c_0 下有子节点，它们会自动排在后面 */
 };
 
-/* 3. 彻底重写模拟总线 3：解决电源管理 AXP228 报错 */
+/* 3. 彻底重写模拟总线 3 - 严格遵守属性优先原则 */
 &i2c3_gpio {
-	/* 首先删除友善之臂原本在 dtsi 里的子节点，防止冲突 */
+	/* 首先通过删除指令清理原有结构 */
 	/delete-node/ spu1705@2d;
 	/delete-node/ axp228@34;
 
-	/* 切换为荣品的物理引脚：D1(SDA) 和 D0(SCL) */
-	gpios = <&gpio_d 1 0 
-	         &gpio_d 0 0>;
-	
+	/* 所有的属性（Properties）必须放在这里 */
+	gpios = <&gpio_d 1 0    /* SDA: GPIOD1 */
+	         &gpio_d 0 0>;  /* SCL: GPIOD0 */
 	pinctrl-names = "default";
-	pinctrl-0 = <&i2c3_pins_rongpin>; /* 引用 D1/D0 映射 */
+	pinctrl-0 = <&i2c3_pins_rongpin>;
+	i2c-gpio,delay-us = <5>;
 	status = "okay";
 
+	/* 所有的子节点（Subnodes）必须放在属性之后 */
 	axp228: pmic@34 {
 		compatible = "x-powers,axp228";
 		reg = <0x34>;
 		interrupt-parent = <&alive_0>;
 		interrupts = <4 8>; /* Alive-4, 低电平触发 */
-		
 		pinctrl-names = "default";
 		pinctrl-0 = <&pmic_irq_pin>;
 
 		regulators {
-			/* DCDC2: CPU 核心电压，解决 DVFS 报错 */
+			/* DCDC2: CPU 核心电压 */
 			vdd_arm: dcdc2 {
 				regulator-name = "vdd_arm";
-				regulator-min-microvolt = <1100000>; /* 1.1V */
+				regulator-min-microvolt = <1100000>; /* 荣品 1.1V */
 				regulator-max-microvolt = <1300000>;
 				regulator-always-on;
 				regulator-boot-on;
 			};
 
-			/* DCDC5: 内存电压，2GB 稳定的生命线 */
+			/* DCDC5: 内存电压 */
 			vcc_ddr: dcdc5 {
 				regulator-name = "vcc_ddr";
-				regulator-min-microvolt = <1500000>; /* 1.5V */
+				regulator-min-microvolt = <1500000>; /* 荣品 1.5V */
 				regulator-max-microvolt = <1500000>;
 				regulator-always-on;
 				regulator-boot-on;
 			};
 
-			/* ELDO2: Wi-Fi 模块供电 3.3V */
+			/* ELDO2: Wi-Fi 模块供电 */
 			vcc_wifi: eldo2 {
 				regulator-name = "vcc_wifi";
 				regulator-min-microvolt = <3300000>;
@@ -99,7 +102,7 @@
 				regulator-boot-on;
 			};
 
-			/* ALDO2: 音频芯片模拟供电 1.8V */
+			/* ALDO2: 音频芯片模拟供电 */
 			vcc_audio: aldo2 {
 				regulator-name = "vcc_audio";
 				regulator-min-microvolt = <1800000>;
