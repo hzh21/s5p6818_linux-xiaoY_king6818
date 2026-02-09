@@ -42,17 +42,53 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
+
 /* --- 彻底清理引脚占用，解锁 D2/D3 --- */
+
+/* 1. 禁用硬件 I2C 控制器 */
 &i2c_0 { 
     status = "disabled"; 
     /delete-property/ pinctrl-0; 
-    /delete-property/ pinctrl-names;
 };
 
-&i2c_1 { status = "disabled"; };
-&i2c_2 { status = "disabled"; };
+&i2c_1 { 
+    status = "disabled"; 
+    /delete-property/ pinctrl-0; 
+};
 
-/* 彻底删除引脚标签定义，从源头切断所有潜在引用 */
-/delete-node/ &i2c0_pin;
-/delete-node/ &i2c1_pin;
-/delete-node/ &i2c2_pin;
+&i2c_2 { 
+    status = "disabled"; 
+    /delete-property/ pinctrl-0; 
+};
+
+/* 2. 禁用 PWM */
+&pwm {
+    status = "disabled";
+};
+
+/* 3. 架空引脚定义，不删除标签以避免编译错误 */
+&i2c0_pin {
+    status = "disabled";
+    nexell,pins = ""; /* 清空引脚定义 */
+};
+
+&i2c1_pin {
+    status = "disabled";
+    nexell,pins = ""; 
+};
+
+&i2c2_pin {
+    status = "disabled";
+    nexell,pins = "";
+};
+
+/* 4. 确保模拟 I2C 驱动配置正确 */
+&i2c3_gpio {
+    gpios = <&gpio_d 3 0    /* sda (99) */
+             &gpio_d 2 0    /* scl (98) */
+            >;
+    i2c-gpio,delay-us = <50>; 
+    i2c-gpio,sda-open-drain; 
+    i2c-gpio,scl-open-drain;
+    status = "okay";
+};
