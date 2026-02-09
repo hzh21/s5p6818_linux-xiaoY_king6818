@@ -82,14 +82,15 @@
     nexell,pins = "";
 };
 
-/* 4. 确保模拟 I2C 驱动配置正确 */
 &i2c3_gpio {
-    gpios = <&gpio_d 3 0    /* sda */
-             &gpio_d 2 0    /* scl */
+    gpios = <&gpio_d 3 0    /* sda (99) */
+             &gpio_d 2 0    /* scl (98) */
             >;
-    /* 增加这两行，强制内核初始化 GPIO 模式 */
-    i2c-gpio,delay-us = <50>; 
-    sda-gpios = <&gpio_d 3 0>;
-    scl-gpios = <&gpio_d 2 0>;
+    i2c-gpio,delay-us = <100>;       /* 进一步降速到 5kHz，模拟极慢速通信 */
+    i2c-gpio,timeout-ms = <100>;     /* 给 AXP 更多反应时间 */
+    i2c-gpio,sda-open-drain;         /* 强制开漏模式 1 */
+    i2c-gpio,scl-open-drain;         /* 强制开漏模式 2 */
+    sda-gpios = <&gpio_d 3 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>; /* 强制开启内部上拉 */
+    scl-gpios = <&gpio_d 2 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>; /* 强制开启内部上拉 */
     status = "okay";
 };
