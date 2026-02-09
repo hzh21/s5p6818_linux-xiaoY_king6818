@@ -207,7 +207,10 @@
 				};
 			};
 		};
-
+		/* 1. 禁用所有可能冲突的硬件 I2C 控制器 */
+        i2c_0: i2c@c00a4000 { status = "disabled"; };
+        i2c_1: i2c@c00a5000 { status = "disabled"; }; /* 重点：关掉它，防止 bus idle 报错 */
+        i2c_2: i2c@c00a6000 { status = "disabled"; };
 		/* 模拟 I2C3：荣品原厂 D2/D3 引脚 */
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
