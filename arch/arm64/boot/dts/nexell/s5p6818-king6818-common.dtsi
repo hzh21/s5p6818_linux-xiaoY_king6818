@@ -28,7 +28,6 @@
 
 	memory {
 		device_type = "memory";
-		/* 即使 U-Boot 只认 1GB，这里先声明 2GB 布局 */
 		reg = <0x00000000 0x40000000 0x00000000 0x80000000>;
 	};
 
@@ -36,10 +35,40 @@
 		ethernet0 = &gmac0;
 	};
 
+	/* 节点 1: 板级信息 - 必须在 soc 外 */
+	mach: board {
+		compatible = "friendlyelec,board";
+		machine = "NANOPI3";
+		hwrev = <255>;
+		model = "NanoPi 3 Series";
+	};
+
+	/* 节点 2: 虚拟声卡 - 必须在 soc 外 */
+	simple_card: sound {
+		compatible = "nexell,simple-audio-card";
+		simple-audio-card,name = "nanopi3-audio";
+		status = "okay";
+	};
+
+	/* 节点 3: 屏幕定义 - 必须在 soc 外 */
+	panel: panel-friendlyelec {
+		compatible = "lcds";
+		status = "okay";
+		port { lcd_panel: endpoint { }; };
+	};
+
+	/* 节点 4: WiFi 节点 - 必须在 soc 外 */
+	wlan {
+		compatible = "samsung,brcm-wlan";
+		vmmc-supply = <&VCC_LDO10>;
+		gpios = <&gpio_b 24 0 &gpio_c 17 0>;
+		status = "okay";
+	};
+
 	soc {
 		#include "s5p6818-pinctrl.dtsi"
 
-		/* 修正 CPU 调频：仅指向 AXP 供电，删除不存在的 SPU 引用 */
+		/* 调频配置 */
 		dvfs:dynamic-freq@bb000 {
 			supply_name = "vdd_arm_axp";
 			vdd_arm_axp-supply = <&VCC1P1_ARM_PMIC>;
@@ -51,13 +80,13 @@
 						   400000  1000000>;
 		};
 
-		/* 关键修正：模拟 I2C 总线 3 适配荣品 D2/D3 引脚 */
+		/* 模拟 I2C3：荣品原厂 D2/D3 引脚 */
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
-			gpios = <&gpio_d 3 0	/* sda -> GPIOD3 (99) */
-				     &gpio_d 2 0	/* scl -> GPIOD2 (98) */
+			gpios = <&gpio_d 3 0	/* sda -> GPIOD3 */
+				     &gpio_d 2 0	/* scl -> GPIOD2 */
 				>;
-			i2c-gpio,delay-us = <20>; /* 约 25kHz，增加稳定性 */
+			i2c-gpio,delay-us = <25>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "okay";
@@ -74,7 +103,7 @@
 					VCC_LDO2:  axp22_aldo1  { PMIC_PDATA_INIT( 1, "axp228_3p3_alive", 3300000, 3300000, 1, 1, 3300000, 1, 0xF) };
 					VCC_LDO3:  axp22_aldo2  { PMIC_PDATA_INIT( 2, "axp228_1p8_alive", 1800000, 1800000, 1, 1, 1800000, 1, 0xF) };
 					VCC_LDO10: axp22_eldo2  { 
-						/* WiFi 供电：强制开机常开 */
+						/* WiFi 供电锁死 3.3V */
 						PMIC_PDATA_INIT( 9, "axp228_3p3_wifi", 3300000, 3300000, 1, 1, 3300000, 1, 0xF) 
 						regulator-always-on;
 						regulator-boot-on;
@@ -82,37 +111,21 @@
 					VCC_DCDC1: axp22_dcdc1  { PMIC_PDATA_INIT(12, "axp228_3p3_sys", 3300000, 3300000, 1, 1, 3300000, 1, 0xF) };
 					VCC1P1_ARM_PMIC: axp22_dcdc2 { PMIC_PDATA_INIT(13, "axp228_1p1_arm", 1100000, 1300000, 1, 1, 1100000, 1, 0xF) };
 					VCC_DCDC5: axp22_dcdc5  { 
-						/* 内存供电：2GB 必须锁定 1.5V */
+						/* 内存 1.5V 锁死 */
 						PMIC_PDATA_INIT(16, "axp228_1p5_ddr", 1500000, 1500000, 1, 1, 1500000, 1, 0xF) 
 						regulator-always-on;
 					};
 				};
 			};
 		};
-		mach: board {
-        compatible = "friendlyelec,board";
-        machine = "NANOPI3";
-        hwrev = <255>;
-        model = "NanoPi 3 Series";
-    };
 
-    /* 必须补上这部分，否则 &simple_card 会报错 */
-    simple_card: sound {
-        compatible = "nexell,simple-audio-card";
-        simple-audio-card,name = "nanopi3-audio";
-        status = "okay";
-        /* 内部 dai-link 先留空或按之前配置写 */
-    };
-    
-    /* 如果报错里还有 panel，也补上这个 */
-    panel: panel-friendlyelec {
-        compatible = "lcds";
-        status = "okay";
-        port { lcd_panel: endpoint { }; };
-    };
-		/* 其余外设基本保持默认，仅确保串口正常 */
+		/* 基础串口 */
 		serial0:serial@c00a1000 { status ="okay"; };
+
+		/* 基础存储 */
 		dw_mmc_0:dw_mmc@c0062000 { status = "okay"; };
+
+		/* 荣品以太网：PHY 地址 4 */
 		gmac0:ethernet@c0060000 {
 			pinctrl-names = "default";
 			pinctrl-0 = <&gmac_pins>;
@@ -132,13 +145,5 @@
 				};
 			};
 		};
-	};
-
-	/* 修正 WiFi 节点：与 AXP 供电解耦或强绑定 */
-	wlan {
-		compatible = "samsung,brcm-wlan";
-		vmmc-supply = <&VCC_LDO10>;
-		gpios = <&gpio_b 24 0 &gpio_c 17 0>;
-		status = "okay";
 	};
 };
