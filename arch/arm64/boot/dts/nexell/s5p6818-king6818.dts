@@ -42,3 +42,17 @@
 &spi_0 {
 	/delete-node/ fbtft@0;
 };
+/* --- 彻底清理引脚占用，解锁 D2/D3 --- */
+&i2c_0 { 
+    status = "disabled"; 
+    /delete-property/ pinctrl-0; 
+    /delete-property/ pinctrl-names;
+};
+
+&i2c_1 { status = "disabled"; };
+&i2c_2 { status = "disabled"; };
+
+/* 彻底删除引脚标签定义，从源头切断所有潜在引用 */
+/delete-node/ &i2c0_pin;
+/delete-node/ &i2c1_pin;
+/delete-node/ &i2c2_pin;
