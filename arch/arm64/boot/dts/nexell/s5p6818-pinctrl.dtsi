@@ -525,28 +525,4 @@ pinctrl@C0010000 {
 		nexell,pin-pull = <NX_PIN_PULL_NONE>;
 		nexell,pin-strength = <NX_PIN_STR0>;
 	};
-	/* RongPin King6818 Specific Mappings */
-
-	/* 1. 修正 I2C0 引脚：荣品物理连接在 D2(SCL) 和 D3(SDA) */
-	i2c0_pins_rongpin: i2c0_pins_rongpin {
-		nexell,pins = "gpiod-2", "gpiod-3";
-		nexell,pin-function = <NX_PIN_FUNC1>;
-		nexell,pin-pull = <NX_PIN_PULL_NONE>;
-		nexell,pin-strength = <NX_PIN_STR0>;
-	};
-
-	/* 2. PMIC 模拟总线引脚：对应荣品 Bus 3 使用的 D1(SDA) 和 D0(SCL) */
-	i2c3_pins_rongpin: i2c3_pins_rongpin {
-		nexell,pins = "gpiod-1", "gpiod-0";
-		nexell,pin-function = <NX_PIN_FUNC0>; /* GPIO 模式用于软件模拟 */
-		nexell,pin-pull = <NX_PIN_PULL_UP>;
-		nexell,pin-strength = <NX_PIN_STR0>;
-	};
-
-	/* 3. PMIC 中断引脚：对应 Alive-4 (GPIO 164) */
-	pmic_irq_pin: pmic_irq_pin {
-		nexell,pins = "alive-4";
-		nexell,pin-function = <NX_PIN_FUNC0>; /* GPIO 输入模式 */
-		nexell,pin-pull = <NX_PIN_PULL_UP>;   /* 内部上拉适配低电平触发 */
-	};
 };
