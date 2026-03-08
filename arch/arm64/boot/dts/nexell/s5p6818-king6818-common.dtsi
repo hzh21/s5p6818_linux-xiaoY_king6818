@@ -206,6 +206,7 @@
 
 		tmuctrl_0: tmuctrl@c0096000 {
 			status = "okay";
+			vtmu-supply = <&VCC_LDO2>;
 		};
 
 		thermal-zones {
