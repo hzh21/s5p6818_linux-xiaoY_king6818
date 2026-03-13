@@ -33,12 +33,15 @@
 	status = "okay";
 };
 
-&simple_card {
-	simple-audio-card,dai-link@0 {
-		hp-det-gpio = <&gpio_b 27 0>;
-	};
-};
-
 &spi_0 {
 	/delete-node/ fbtft@0;
+};
+/* 1. 彻底禁用音频相关，防止 Oops 崩溃 */
+&i2s_0 { status = "disabled"; };
+&spdif_tx { status = "disabled"; };
+&simple_card { status = "disabled"; };
+
+/* 2. 禁用所有触摸屏，释放 GPIO 15/16 给 I2C 总线使用 */
+&i2c_2 {
+    status = "disabled"; 
 };
