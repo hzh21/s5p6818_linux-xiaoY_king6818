@@ -188,9 +188,7 @@
 		};
 
 		dvfs:dynamic-freq@bb000 {
-			supply_name = "vdd_arm_spu";
 			supply_optional = "vdd_arm_axp";
-			vdd_arm_spu-supply = <&VCC1P1_ARM_SPU>;
 			vdd_arm_axp-supply = <&VCC1P1_ARM_PMIC>;
 			status = "okay";
 			dvfs-tables = <1400000 1200000
@@ -208,6 +206,7 @@
 
 		tmuctrl_0: tmuctrl@c0096000 {
 			status = "okay";
+			vtmu-supply = <&VCC_LDO2>;
 		};
 
 		thermal-zones {
@@ -284,11 +283,11 @@
 
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
-			gpios = <&gpio_e 31 0	/* sda */
-				&gpio_e 30 0	/* scl */
+			gpios = <&gpio_c 16 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* sda */
+				     &gpio_c 15 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* scl */
 				>;
 
-			i2c-gpio,delay-us = <10>;	/* ~100 kHz */
+			i2c-gpio,delay-us = <5>; /* 建议从10改成5，提高读取稳定性 */
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
@@ -452,6 +451,7 @@
 				#sound-dai-cells = <0>;
 				compatible = "everest,es8316";
 				reg = <0x11>;
+				status = "disabled";
 			};
 		};
 
