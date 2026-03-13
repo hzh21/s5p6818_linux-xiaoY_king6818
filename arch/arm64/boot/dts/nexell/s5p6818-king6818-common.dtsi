@@ -262,7 +262,7 @@
 				#size-cells = <0>;
 				ethernet_phy: ethernet-phy@4 { reg = <4>; };
 			};
-
+		};
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
 			gpios = <&gpio_c 16 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* sda */
