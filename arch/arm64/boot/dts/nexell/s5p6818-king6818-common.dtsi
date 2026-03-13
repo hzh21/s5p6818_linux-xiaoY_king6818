@@ -254,15 +254,33 @@
 			};
 		};
 
-		gmac0: ethernet@c0060000 {
+		gmac0:ethernet@c0060000 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&gmac_pins>;
+
 			status = "okay";
+			#address-cells = <0x1>;
+			#size-cells = <0x0>;
+
 			snps,phy-addr = <4>;
+			snps,reset-gpio = <&gpio_e 22 0>;
+			snps,reset-active-low;
+			snps,reset-delays-us = <0 10000 30000>;
+
 			mdio {
 				#address-cells = <1>;
 				#size-cells = <0>;
-				ethernet_phy: ethernet-phy@4 { reg = <4>; };
+
+				ethernet_phy: ethernet-phy@4 {
+					reg = <4>;
+					fixed-link {
+						speed = <1000>;
+						full-duplex;
+					};
+				};
 			};
 		};
+
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
 			gpios = <&gpio_c 16 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* sda */
@@ -434,6 +452,7 @@
 				#sound-dai-cells = <0>;
 				compatible = "everest,es8316";
 				reg = <0x11>;
+				status = "disabled";
 			};
 		};
 
