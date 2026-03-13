@@ -36,13 +36,13 @@
 		nx,sleep_slots = <_slp_slots>;
 
 / {
-	model = "FriendlyElec boards based on Nexell s5p6818";
-	compatible = "friendlyelec,nanopi3",
+	model = "RongPin king6818";
+	compatible = "RongPin,king6818",
 		   "nexell,s5p6818";
 
 	memory {
 		device_type = "memory";
-		reg = <0x40000000 0x3db00000>,<0x80000000 0x40000000>;
+		reg = <0x00000000 0x40000000 0x00000000 0x80000000>;
 	};
 
 	aliases {
@@ -188,7 +188,9 @@
 		};
 
 		dvfs:dynamic-freq@bb000 {
-			supply_name = "vdd_arm_axp";
+			supply_name = "vdd_arm_spu";
+			supply_optional = "vdd_arm_axp";
+			vdd_arm_spu-supply = <&VCC1P1_ARM_SPU>;
 			vdd_arm_axp-supply = <&VCC1P1_ARM_PMIC>;
 			status = "okay";
 			dvfs-tables = <1400000 1200000
@@ -206,7 +208,6 @@
 
 		tmuctrl_0: tmuctrl@c0096000 {
 			status = "okay";
-			vtmu-supply = <&VCC_LDO2>;
 		};
 
 		thermal-zones {
@@ -283,18 +284,17 @@
 
 		i2c3_gpio:i2c@3 {
 			compatible = "i2c-gpio";
-			gpios = <&gpio_c 16 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* sda */
-				     &gpio_c 15 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)	/* scl */
+			gpios = <&gpio_e 31 0	/* sda */
+				&gpio_e 30 0	/* scl */
 				>;
 
-			i2c-gpio,delay-us = <5>; /* 建议从10改成5，提高读取稳定性 */
+			i2c-gpio,delay-us = <10>;	/* ~100 kHz */
 			#address-cells = <1>;
 			#size-cells = <0>;
 		};
 
 		i2c3_gpio:i2c@3 {
 			
-
 			axp228@34 {
 				compatible = "x-powers,axp228";
 				reg = <0x34>;
@@ -452,23 +452,11 @@
 				#sound-dai-cells = <0>;
 				compatible = "everest,es8316";
 				reg = <0x11>;
-				status = "disabled";
 			};
 		};
 
 		i2c_1: i2c@c00a5000 {
-			samsung,i2c-max-bus-freq = <200000>;
 			status = "okay";
-
-			#address-cells = <1>;
-			#size-cells = <0>;
-
-			ft5x06_ts@38 {
-			compatible = "ft5x06_ts", "ft5x06";
-			reg = <0x38>;
-			interrupt-parent = <&gpio_b>;
-			interrupts = <26 IRQ_TYPE_EDGE_FALLING>;
-			};
 		};
 
 		i2c_2: i2c@c00a6000 {
@@ -477,6 +465,59 @@
 
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			onewire_ts@2f {
+				compatible = "onewire";
+				reg = <0x2f>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&touchpanel_irq>;
+			};
+
+			ft5x06_ts@38 {
+				compatible = "edt,edt-ft5x06", "ft5x06";
+				reg = <0x38>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+			};
+
+			goodix_ts@5d {
+				compatible = "goodix,gt9xx";
+				reg = <0x5d>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+				goodix,irq-gpio = <&gpio_c 16 0>;
+			};
+
+			goodix_ts@14 {
+				compatible = "goodix,gt9xx";
+				reg = <0x14>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+				goodix,irq-gpio = <&gpio_c 16 0>;
+			};
+
+			hx8528a_ts@48 {
+				compatible = "himax,hx8528-a";
+				reg = <0x48>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+			};
+
+			it7260_ts@46 {
+				compatible = "ite,it7260";
+				reg = <0x46>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+			};
+
+			st1572_ts@55 {
+				compatible = "sitronix,st1572";
+				reg = <0x55>;
+				interrupt-parent = <&gpio_c>;
+				interrupts = <16 IRQ_TYPE_EDGE_FALLING>;
+			};
 
 		};
 
@@ -589,7 +630,6 @@
 		io,gpio = <&gpio_c 15 0>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&onewire_pin>;
-		status = "disabled";
 	};
 
 	gpio_key: gpio_keys {
@@ -634,7 +674,7 @@
 		simple-audio-card,routing =
 			"Out Jack", "HPOL",
 			"Out Jack", "HPOR";
-		status = "okay";
+		status = "disabled";
 
 		simple-audio-card,dai-link@0 {
 			format = "i2s";
@@ -738,7 +778,15 @@
 	port = <0>;
 	external_sync = <0>;
 	interlace = <0>;
-	status = "okay";
+	status = "disabled";
+
+	sensor {
+		type = <NX_CAPTURE_SENSOR_I2C>;
+		i2c_name = "ov5640";
+		i2c_adapter = <0>;
+		addr = <0x3C>;
+		status = "disabled";
+	};
 };
 
 &dp_drm {
