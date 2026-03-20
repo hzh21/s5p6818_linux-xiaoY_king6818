@@ -27,6 +27,20 @@ jobs:
           # 基础设置
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
+
+          # 1. 核心 Match 模块 (解决 --comment 报错的关键)
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_COMMENT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_CONNLIMIT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_STATE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_IPRANGE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_OWNER
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_MULTIPORT
+
+          # 2. 状态跟踪 (确保 NAT 逻辑完整)
+          ./scripts/config --enable CONFIG_NF_CONNTRACK
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_IPV4
+          ./scripts/config --enable CONFIG_NF_NAT_IPV4
           
           # 核心网络与 TUN
           ./scripts/config --enable CONFIG_TUN
