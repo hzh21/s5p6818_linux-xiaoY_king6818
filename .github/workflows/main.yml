@@ -23,7 +23,7 @@ jobs:
           # 1. 彻底禁用内核自动生成 Git 版本后缀
           touch .scmversion
           export LOCALVERSION=""
-
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- nanopi3_linux_defconfig
           # 基础设置
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
