@@ -24,15 +24,23 @@ jobs:
           touch .scmversion
           export LOCALVERSION=""
 
-          # 2. 使用基础配置
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- nanopi3_linux_defconfig
-          
-          # 3. 注入配置：开启 TUN (内置) 和 Docker 必需项
+          # 基础设置
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          
+          # 核心网络与 TUN
           ./scripts/config --enable CONFIG_TUN
           ./scripts/config --enable CONFIG_IKCONFIG
           ./scripts/config --enable CONFIG_IKCONFIG_PROC
+          
+          # 彻底开启 Iptables NAT (解决 Podman 报错)
+          ./scripts/config --enable CONFIG_NETFILTER_XTABLES
+          ./scripts/config --enable CONFIG_IP_NF_IPTABLES
+          ./scripts/config --enable CONFIG_IP_NF_NAT
+          ./scripts/config --enable CONFIG_IP_NF_TARGET_MASQUERADE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_TARGET_MASQUERADE
+          
+          # Docker/Podman 增强
           ./scripts/config --enable CONFIG_OVERLAY_FS
           ./scripts/config --enable CONFIG_CGROUP_DEVICE
           ./scripts/config --enable CONFIG_MEMCG
