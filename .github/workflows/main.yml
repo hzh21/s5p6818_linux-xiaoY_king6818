@@ -24,20 +24,19 @@ jobs:
           touch .scmversion
           export LOCALVERSION=""
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- nanopi3_linux_defconfig
+          
           # 基础设置
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
-
+      
           # 2. 强力插入：确保所有 Netfilter 核心组件全部为内建 (y)
-          # 我们不再依赖 scripts/config，直接用 sed 批量处理，防止漏网之鱼
-          sed -i 's/CONFIG_NETFILTER=m/CONFIG_NETFILTER=y/g' .config
-          sed -i 's/CONFIG_NETFILTER_ADVANCED=n/CONFIG_NETFILTER_ADVANCED=y/g' .config
+          # 使用 sed 批量处理，同时覆盖 "=m" 和 "is not set" 的情况
+          sed -i 's/.*CONFIG_NETFILTER.*/CONFIG_NETFILTER=y/g' .config
+          sed -i 's/.*CONFIG_NETFILTER_ADVANCED.*/CONFIG_NETFILTER_ADVANCED=y/g' .config
           
-          # 强制开启 Xtables 核心
+          # 强制开启 Xtables 核心与 IPv4 基础表
           echo "CONFIG_NETFILTER_XTABLES=y" >> .config
           echo "CONFIG_X_TABLES=y" >> .config
-          
-          # 强制开启 IPv4 基础表 (filter, nat, mangle)
           echo "CONFIG_IP_NF_IPTABLES=y" >> .config
           echo "CONFIG_IP_NF_FILTER=y" >> .config
           echo "CONFIG_IP_NF_NAT=y" >> .config
@@ -51,28 +50,36 @@ jobs:
           echo "CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y" >> .config
           echo "CONFIG_NETFILTER_XT_MATCH_STATE=y" >> .config
           
-          # 强制开启连接跟踪 (NAT 基础)
+          # 强制开启连接跟踪与 NAT 逻辑
           echo "CONFIG_NF_CONNTRACK=y" >> .config
           echo "CONFIG_NF_CONNTRACK_IPV4=y" >> .config
           echo "CONFIG_NF_NAT=y" >> .config
           echo "CONFIG_NF_NAT_IPV4=y" >> .config
-
+      
+          # 【新增补全】容器网络基石：VETH 和 TUN
+          # 没有 VETH，容器无法创建虚拟网卡对；没有 TUN，Mihomo 无法工作
+          echo "CONFIG_VETH=y" >> .config
+          echo "CONFIG_TUN=y" >> .config
+          echo "CONFIG_BRIDGE=y" >> .config
+      
           # 3. 运行 olddefconfig 自动补全依赖并清理冲突
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           
-          # Docker/Podman 增强
+          # Docker/Podman 核心增强 (Cgroups 等)
           ./scripts/config --enable CONFIG_OVERLAY_FS
           ./scripts/config --enable CONFIG_CGROUP_DEVICE
           ./scripts/config --enable CONFIG_MEMCG
           ./scripts/config --enable CONFIG_MEMCG_SWAP
           ./scripts/config --enable CONFIG_BLK_CGROUP
+          ./scripts/config --enable CONFIG_POSIX_MQUEUE
           
-          # 3. 核心修复：
-          # 使用 KCFLAGS 忽略老内核在现代 GCC 下的警告误报
-          # 同时编译 Image 和 dtbs
+          # 4. 再次执行 olddefconfig 确保 scripts/config 的改动生效
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+      
+          # 5. 编译 Image 和 dtbs
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-               KCFLAGS="-Wno-array-bounds -Wno-format-overflow" \
-               Image dtbs -j$(nproc)
+                KCFLAGS="-Wno-array-bounds -Wno-format-overflow" \
+                Image dtbs -j$(nproc)
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
