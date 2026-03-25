@@ -45,6 +45,24 @@
 		reg = <0x00000000 0x40000000 0x00000000 0x80000000>;
 	};
 
+/* 修复 USB OTG 电源警告的虚拟节点 */
+	reg_vusb_d: regulator-vusbd {
+		compatible = "regulator-fixed";
+		regulator-name = "vusb_d";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	reg_vusb_a: regulator-vusba {
+		compatible = "regulator-fixed";
+		regulator-name = "vusb_a";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
 	aliases {
 		ethernet0 = &gmac0;
 	};
@@ -620,6 +638,7 @@
 	};
 
 	onewire_pwm {
+		status = "disabled";
 		compatible = "onewire";
 		reg = <PHYS_BASE_PWM 0x1000>;
 		interrupt-parent = <&gic>;
@@ -643,25 +662,6 @@
 			linux,code = <KEY_POWER>;
 			gpio-key,wakeup;
 		};
-	};
-
-/* 修复 USB OTG 电源警告的虚拟节点 */
-	reg_vusb_d: regulator-vusbd {
-		compatible = "regulator-fixed";
-		regulator-name = "vusb_d";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-always-on;
-		regulator-boot-on;
-	};
-
-	reg_vusb_a: regulator-vusba {
-		compatible = "regulator-fixed";
-		regulator-name = "vusb_a";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-always-on;
-		regulator-boot-on;
 	};
 
 	leds: gpio-leds {
