@@ -1,5 +1,9 @@
-name: Build King6818 Docker Kernel
-on: [push, workflow_dispatch]
+name: Build Optimized King6818 Kernel
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -8,56 +12,77 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Toolchain
+      - name: Install GCC 10 Toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
+            gcc-10-aarch64-linux-gnu \
+            g++-10-aarch64-linux-gnu \
             device-tree-compiler \
             bc libssl-dev make \
             bison flex libelf-dev \
-            pkg-config
+            pkg-config curl
+
+      - name: Patch TCP BBR
+        run: |
+          # 从 Google 官方仓库 Backport 适用于 4.4 的 BBR 源码
+          curl -sSL https://raw.githubusercontent.com/google/bbr/master/net/ipv4/tcp_bbr.c -o net/ipv4/tcp_bbr.c
+          
+          # 修改 Makefile 确保编译 bbr.o
+          if ! grep -q "tcp_bbr.o" net/ipv4/Makefile; then
+            echo "obj-\$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o" >> net/ipv4/Makefile
+          fi
+          
+          # 修改 Kconfig 注入配置项定义
+          if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
+            cat >> net/ipv4/Kconfig <<EOF
+config TCP_CONG_BBR
+    tristate "TCP BBR congestion control"
+    default n
+    help
+      This enables TCP BBR congestion control algorithm.
+EOF
+          fi
 
       - name: Configure and Build
         run: |
-          # 1. 彻底禁用内核自动生成 Git 版本后缀
-          touch .scmversion
-          export LOCALVERSION=""
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- king6818_linux_defconfig
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CC=aarch64-linux-gnu-gcc-10
           
-          # 基础设置
-          ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
-          ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
-      
-          # 2. 先强行开启“父类”大开关（这些是下面所有项的前提）
-          ./scripts/config --enable CONFIG_NETFILTER
-          ./scripts/config --enable CONFIG_NETFILTER_ADVANCED
-          ./scripts/config --enable CONFIG_NF_TABLES
-          ./scripts/config --enable CONFIG_NF_CONNTRACK
-          ./scripts/config --enable CONFIG_NETFILTER_XTABLES
-          # 3. 运行 olddefconfig 自动补全依赖并清理冲突
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          # 1. 生成基础配置
+          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC king6818_linux_defconfig
           
-          # Docker/Podman 核心增强 (Cgroups 等)
-          ./scripts/config --enable CONFIG_OVERLAY_FS
-          ./scripts/config --enable CONFIG_CGROUP_DEVICE
-          ./scripts/config --enable CONFIG_MEMCG
-          ./scripts/config --enable CONFIG_MEMCG_SWAP
-          ./scripts/config --enable CONFIG_BLK_CGROUP
-          ./scripts/config --enable CONFIG_POSIX_MQUEUE
+          # 2. 内核性能与协议栈深度优化
+          ./scripts/config --enable CONFIG_TCP_CONG_BBR
+          ./scripts/config --set-val CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --set-val CONFIG_HZ 1000
+          ./scripts/config --enable CONFIG_HZ_1000
+          ./scripts/config --enable CONFIG_HIGH_RES_TIMERS
+          ./scripts/config --enable CONFIG_SLUB
+          ./scripts/config --disable CONFIG_SLUB_DEBUG
           
-          # 4. 再次执行 olddefconfig 确保 scripts/config 的改动生效
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-      
-          # 5. 编译 Image 和 dtbs
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-                KCFLAGS="-Wno-array-bounds -Wno-format-overflow" \
-                Image dtbs -j$(nproc)
+          # 3. ZRAM 与内存优化 (解决 Swap 延迟 )
+          ./scripts/config --enable CONFIG_ZRAM
+          ./scripts/config --enable CONFIG_ZRAM_LZ4_COMPRESS
+          ./scripts/config --enable CONFIG_ZSMALLOC
+          
+          # 4. 网络分流优化 (RPS/RFS )
+          ./scripts/config --enable CONFIG_RPS
+          ./scripts/config --enable CONFIG_RFS
+          
+          # 5. 自动同步依赖配置
+          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC olddefconfig
+          
+          # 6. 开始编译 (针对 Cortex-A53 开启 O3 指令优化 )
+          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
+               KCFLAGS="-O3 -march=armv8-a -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
+               Image dtbs -j$(nproc)
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: King6818-Kernel-Result
+          name: Optimized-King6818-Kernel
           path: |
             arch/arm64/boot/Image
             arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
