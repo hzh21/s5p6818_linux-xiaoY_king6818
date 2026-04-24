@@ -71,8 +71,9 @@ jobs:
           
           # 4. 正式编译
           # 注意：这里 ARCH=$ARCH 确保 ARCH 是变量传递，而不是作为 target
+          # 修改后的编译阶段：加入 +crc 扩展
           make -j$(nproc) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
-               KCFLAGS="-O3 -march=armv8-a -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
+               KCFLAGS="-O3 -march=armv8-a+crc -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
                Image dtbs
 
       - name: Upload Artifacts
