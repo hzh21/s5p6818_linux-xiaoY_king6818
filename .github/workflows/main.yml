@@ -25,13 +25,22 @@ jobs:
 
       - name: Patch TCP BBR
         run: |
-          # 1. 下载针对 4.4/4.9 内核兼容的 BBR v1 源码
+          # 1. 下载 BBR 源码
           curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/net/ipv4/tcp_bbr.c?h=v4.9.337" -o net/ipv4/tcp_bbr.c
           
-          # 2. 注入 Makefile
+          # 2. 下载并补全 4.4 缺失的 win_minmax.h 和 win_minmax.c
+          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/include/linux/win_minmax.h?h=v4.9.337" -o include/linux/win_minmax.h
+          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/lib/win_minmax.c?h=v4.9.337" -o lib/win_minmax.c
+          
+          # 3. 将 win_minmax.c 编译进内核 (注入到 lib/Makefile)
+          if ! grep -q "win_minmax.o" lib/Makefile; then
+            echo "obj-y += win_minmax.o" >> lib/Makefile
+          fi
+
+          # 4. 注入 Makefile (BBR 模块)
           sed -i '/obj-$(CONFIG_TCP_CONG_CUBIC)/a obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o' net/ipv4/Makefile
           
-          # 3. 注入 Kconfig (使用 printf 避开 EOF 语法错误)
+          # 5. 注入 Kconfig
           if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
             printf 'config TCP_CONG_BBR\n\ttristate "TCP BBR congestion control"\n\tdefault n\n\thelp\n\t  This enables TCP BBR congestion control algorithm.\n' >> net/ipv4/Kconfig
           fi
