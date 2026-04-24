@@ -23,28 +23,6 @@ jobs:
             bison flex libelf-dev \
             pkg-config curl
 
-      - name: Patch TCP BBR
-        run: |
-          # 1. 下载 BBR 源码
-          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/net/ipv4/tcp_bbr.c?h=v4.9.337" -o net/ipv4/tcp_bbr.c
-          
-          # 2. 下载并补全 4.4 缺失的 win_minmax.h 和 win_minmax.c
-          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/include/linux/win_minmax.h?h=v4.9.337" -o include/linux/win_minmax.h
-          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/lib/win_minmax.c?h=v4.9.337" -o lib/win_minmax.c
-          
-          # 3. 将 win_minmax.c 编译进内核 (注入到 lib/Makefile)
-          if ! grep -q "win_minmax.o" lib/Makefile; then
-            echo "obj-y += win_minmax.o" >> lib/Makefile
-          fi
-
-          # 4. 注入 Makefile (BBR 模块)
-          sed -i '/obj-$(CONFIG_TCP_CONG_CUBIC)/a obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o' net/ipv4/Makefile
-          
-          # 5. 注入 Kconfig
-          if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
-            printf 'config TCP_CONG_BBR\n\ttristate "TCP BBR congestion control"\n\tdefault n\n\thelp\n\t  This enables TCP BBR congestion control algorithm.\n' >> net/ipv4/Kconfig
-          fi
-
       - name: Configure and Build
         run: |
           export ARCH=arm64
@@ -54,29 +32,31 @@ jobs:
           # 1. 生成基础配置
           make king6818_linux_defconfig
           
-          # 2. 深度性能优化
-          ./scripts/config --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --set-val CONFIG_DEFAULT_TCP_CONG "\"bbr\""
+          # 2. 深度网络性能调优 (针对 4.4 内核最强组合)
+          # 开启 FQ 调度器 - 这是解决短视频流量挤占的关键
           ./scripts/config --enable CONFIG_NET_SCH_FQ
+          ./scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
+          
+          # 开启内核原生加速
           ./scripts/config --set-val CONFIG_HZ 1000
           ./scripts/config --enable CONFIG_HZ_1000
           ./scripts/config --enable CONFIG_HIGH_RES_TIMERS
+          
+          # 优化内存管理
           ./scripts/config --enable CONFIG_SLUB
           ./scripts/config --disable CONFIG_SLUB_DEBUG
-          
-          # 内存与 ZRAM 优化
           ./scripts/config --enable CONFIG_ZRAM
           ./scripts/config --enable CONFIG_ZRAM_LZ4_COMPRESS
           ./scripts/config --enable CONFIG_ZSMALLOC
           
-          # 启用多核分流 (RPS/RFS)
+          # 开启多核分流 (RPS/RFS)
           ./scripts/config --enable CONFIG_RPS
           ./scripts/config --enable CONFIG_RFS
 
           # 3. 同步配置
           make olddefconfig
           
-          # 4. 正式编译 (加入 +crc 硬件加速支持)
+          # 4. 正式编译 (保留硬件加速指令)
           make -j$(nproc) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
                KCFLAGS="-O3 -march=armv8-a+crc -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
                Image dtbs
