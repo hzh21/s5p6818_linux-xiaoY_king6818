@@ -25,28 +25,29 @@ jobs:
 
       - name: Patch TCP BBR
         run: |
-          # 1. 下载源码
+          # 下载 BBR 源码
           curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next.git/plain/net/ipv4/tcp_bbr.c" -o net/ipv4/tcp_bbr.c
           
-          # 2. 注入 Makefile (改用 sed 避免 if/! 语法冲突)
-          # 寻找现有的拥塞控制块并插入 bbr
+          # 注入 Makefile (使用更鲁棒的匹配方式)
           sed -i '/obj-$(CONFIG_TCP_CONG_CUBIC)/a obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o' net/ipv4/Makefile
           
-          # 3. 注入 Kconfig (使用标准的管道符写入)
+          # 注入 Kconfig
           if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
             printf 'config TCP_CONG_BBR\n\ttristate "TCP BBR congestion control"\n\tdefault n\n\thelp\n\t  This enables TCP BBR congestion control algorithm.\n' >> net/ipv4/Kconfig
           fi
 
       - name: Configure and Build
         run: |
+          # 统一环境变量，防止执行时丢失
+          export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CC=aarch64-linux-gnu-gcc-10
-          export ARCH=arm64
           
-          # 生成基础配置
-          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC king6818_linux_defconfig
+          # 1. 生成基础配置 (必须先做这一步产生 .config)
+          make king6818_linux_defconfig
           
-          # 内核性能调优
+          # 2. 修改配置 (scripts/config 只有在 .config 存在时才有效)
+          # 注意：字符串值需要转义双引号
           ./scripts/config --enable CONFIG_TCP_CONG_BBR
           ./scripts/config --set-val CONFIG_DEFAULT_TCP_CONG "\"bbr\""
           ./scripts/config --enable CONFIG_NET_SCH_FQ
@@ -61,15 +62,18 @@ jobs:
           ./scripts/config --enable CONFIG_ZRAM_LZ4_COMPRESS
           ./scripts/config --enable CONFIG_ZSMALLOC
           
-          # 启用多核分流 (RPS/RFS)
+          # 多核分流
           ./scripts/config --enable CONFIG_RPS
           ./scripts/config --enable CONFIG_RFS
+
+          # 3. 应用修改并处理依赖
+          make olddefconfig
           
-          # 同步配置并编译
-          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC olddefconfig
-          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
+          # 4. 正式编译
+          # 注意：这里 ARCH=$ARCH 确保 ARCH 是变量传递，而不是作为 target
+          make -j$(nproc) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
                KCFLAGS="-O3 -march=armv8-a -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
-               Image dtbs -j$(nproc)
+               Image dtbs
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
