@@ -25,15 +25,27 @@ jobs:
 
       - name: Patch TCP BBR
         run: |
-          # 下载 BBR 源码
-          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next.git/plain/net/ipv4/tcp_bbr.c" -o net/ipv4/tcp_bbr.c
+          # 1. 从官方内核 4.9 分支获取最初版的 BBR v1 (不含 BTF/BPF 复杂依赖)
+          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/net/ipv4/tcp_bbr.c?h=v4.9.337" -o net/ipv4/tcp_bbr.c
           
-          # 注入 Makefile (使用更鲁棒的匹配方式)
+          # 2. 检查下载是否成功
+          if [ ! -s net/ipv4/tcp_bbr.c ]; then
+            echo "Download failed, using alternative mirror..."
+            curl -sSL "https://raw.githubusercontent.com/torvalds/linux/v4.9/net/ipv4/tcp_bbr.c" -o net/ipv4/tcp_bbr.c
+          fi
+
+          # 3. 注入 Makefile
           sed -i '/obj-$(CONFIG_TCP_CONG_CUBIC)/a obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o' net/ipv4/Makefile
           
-          # 注入 Kconfig
+          # 4. 注入 Kconfig
           if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
-            printf 'config TCP_CONG_BBR\n\ttristate "TCP BBR congestion control"\n\tdefault n\n\thelp\n\t  This enables TCP BBR congestion control algorithm.\n' >> net/ipv4/Kconfig
+            cat >> net/ipv4/Kconfig <<EOF
+              config TCP_CONG_BBR
+                  tristate "TCP BBR congestion control"
+                  default n
+                  help
+                    This enables TCP BBR congestion control algorithm.
+              EOF
           fi
 
       - name: Configure and Build
