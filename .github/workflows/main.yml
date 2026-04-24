@@ -29,8 +29,14 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CC=aarch64-linux-gnu-gcc-10
           
-          # 1. 生成基础配置
-          make king6818_linux_defconfig
+          # 1. 彻底禁用内核自动生成 Git 版本后缀
+          touch .scmversion
+          export LOCALVERSION=""
+          make  king6818_linux_defconfig
+          
+          # 基础设置
+          ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
+          ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
           
           # 2. 深度网络性能调优 (针对 4.4 内核最强组合)
           # 开启 FQ 调度器 - 这是解决短视频流量挤占的关键
