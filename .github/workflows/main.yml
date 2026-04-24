@@ -23,11 +23,18 @@ jobs:
             bison flex libelf-dev \
             pkg-config curl
 
-      - name: Patch TCP BBR
+      - name: Patch TCP BBR (v1 Backport)
         run: |
-          # 从 Google 官方仓库 Backport 适用于 4.4 的 BBR 源码
-          curl -sSL https://raw.githubusercontent.com/google/bbr/master/net/ipv4/tcp_bbr.c -o net/ipv4/tcp_bbr.c
+          # 使用内核官方 net-next 树中的 BBR v1 源码
+          # 4.4 内核移植 BBR v1 兼容性最好
+          curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next.git/plain/net/ipv4/tcp_bbr.c" -o net/ipv4/tcp_bbr.c
           
+          # 检查文件是否下载成功
+          if [ ! -s net/ipv4/tcp_bbr.c ]; then
+            echo "BBR source download failed!"
+            exit 1
+          fi
+
           # 修改 Makefile 确保编译 bbr.o
           if ! grep -q "tcp_bbr.o" net/ipv4/Makefile; then
             echo "obj-\$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o" >> net/ipv4/Makefile
@@ -62,19 +69,19 @@ EOF
           ./scripts/config --enable CONFIG_SLUB
           ./scripts/config --disable CONFIG_SLUB_DEBUG
           
-          # 3. ZRAM 与内存优化 (解决 Swap 延迟 )
+          # 3. ZRAM 与内存优化 (解决 2GB 内存下 Swap 延迟)
           ./scripts/config --enable CONFIG_ZRAM
           ./scripts/config --enable CONFIG_ZRAM_LZ4_COMPRESS
           ./scripts/config --enable CONFIG_ZSMALLOC
           
-          # 4. 网络分流优化 (RPS/RFS )
+          # 4. 网络分流优化 (RPS/RFS)
           ./scripts/config --enable CONFIG_RPS
           ./scripts/config --enable CONFIG_RFS
           
           # 5. 自动同步依赖配置
           make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC olddefconfig
           
-          # 6. 开始编译 (针对 Cortex-A53 开启 O3 指令优化 )
+          # 6. 开始编译 (针对 Cortex-A53 开启 O3 与 CPU 调度优化)
           make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
                KCFLAGS="-O3 -march=armv8-a -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
                Image dtbs -j$(nproc)
