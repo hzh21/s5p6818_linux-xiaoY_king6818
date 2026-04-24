@@ -25,22 +25,18 @@ jobs:
 
       - name: Patch TCP BBR (v1 Backport)
         run: |
-          # 使用内核官方 net-next 树中的 BBR v1 源码
-          # 4.4 内核移植 BBR v1 兼容性最好
+          # 下载源码
           curl -sSL "https://git.kernel.org/pub/scm/linux/kernel/git/davem/net-next.git/plain/net/ipv4/tcp_bbr.c" -o net/ipv4/tcp_bbr.c
           
-          # 检查文件是否下载成功
           if [ ! -s net/ipv4/tcp_bbr.c ]; then
             echo "BBR source download failed!"
             exit 1
           fi
 
-          # 修改 Makefile 确保编译 bbr.o
-          if ! grep -q "tcp_bbr.o" net/ipv4/Makefile; then
-            echo "obj-\$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o" >> net/ipv4/Makefile
-          fi
+          # 修正 Makefile 注入语法，避免 $ 符号引起 YAML 报错
+          sed -i '/obj-$(CONFIG_TCP_CONG_ADVANCED)/a obj-$(CONFIG_TCP_CONG_BBR) += tcp_bbr.o' net/ipv4/Makefile
           
-          # 修改 Kconfig 注入配置项定义
+          # 修改 Kconfig
           if ! grep -q "config TCP_CONG_BBR" net/ipv4/Kconfig; then
             cat >> net/ipv4/Kconfig <<EOF
 config TCP_CONG_BBR
@@ -55,13 +51,14 @@ EOF
         run: |
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CC=aarch64-linux-gnu-gcc-10
+          export ARCH=arm64
           
           # 1. 生成基础配置
-          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC king6818_linux_defconfig
+          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC king6818_linux_defconfig
           
-          # 2. 内核性能与协议栈深度优化
+          # 2. 内核协议栈优化 (针对高并发视频和银行 App)
           ./scripts/config --enable CONFIG_TCP_CONG_BBR
-          ./scripts/config --set-val CONFIG_DEFAULT_TCP_CONG "bbr"
+          ./scripts/config --set-val CONFIG_DEFAULT_TCP_CONG "\"bbr\""
           ./scripts/config --enable CONFIG_NET_SCH_FQ
           ./scripts/config --set-val CONFIG_HZ 1000
           ./scripts/config --enable CONFIG_HZ_1000
@@ -69,20 +66,20 @@ EOF
           ./scripts/config --enable CONFIG_SLUB
           ./scripts/config --disable CONFIG_SLUB_DEBUG
           
-          # 3. ZRAM 与内存优化 (解决 2GB 内存下 Swap 延迟)
+          # 3. 内存与 ZRAM 优化 (解决 2GB 内存 Swap 瓶颈)
           ./scripts/config --enable CONFIG_ZRAM
           ./scripts/config --enable CONFIG_ZRAM_LZ4_COMPRESS
           ./scripts/config --enable CONFIG_ZSMALLOC
           
-          # 4. 网络分流优化 (RPS/RFS)
+          # 4. 网络分流支持
           ./scripts/config --enable CONFIG_RPS
           ./scripts/config --enable CONFIG_RFS
           
-          # 5. 自动同步依赖配置
-          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC olddefconfig
+          # 5. 自动同步依赖
+          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC olddefconfig
           
-          # 6. 开始编译 (针对 Cortex-A53 开启 O3 与 CPU 调度优化)
-          make ARCH=arm64 CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
+          # 6. 开始编译 (针对 Cortex-A53 开启性能模式)
+          make $ARCH CROSS_COMPILE=$CROSS_COMPILE CC=$CC \
                KCFLAGS="-O3 -march=armv8-a -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
                Image dtbs -j$(nproc)
 
