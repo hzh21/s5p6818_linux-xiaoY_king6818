@@ -1,6 +1,6 @@
 name: Build 5.10.252 King6818 Kernel
 
-# 独立分支触发，不影响 master 上的 4.14 CI
+# 独立分支触发，不影响 master 上的 4.14 CI 
 on:
   push:
     branches: [ ci/5.10-king6818 ]
