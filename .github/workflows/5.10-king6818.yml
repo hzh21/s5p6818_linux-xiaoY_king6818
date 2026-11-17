@@ -11,7 +11,7 @@ jobs:
     # 用 20.04 容器锁死 gcc-10 交叉工具链（24.04 已无 gcc-10）
     runs-on: ubuntu-latest
     container: ubuntu:20.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash
@@ -28,8 +28,8 @@ jobs:
             bc bison flex libssl-dev libelf-dev device-tree-compiler pkg-config
           # 5.10 的 scripts/Kconfig.include 会探测 $(CROSS_COMPILE)gcc，
           # 而包只提供带 -10 后缀的二进制 -> 建软链让无后缀名可用
-          ln -sf /usr/bin/aarch64-linux-gnu-gcc-10   /usr/local/bin/aarch64-linux-gnu-gcc
-          ln -sf /usr/bin/aarch64-linux-gnu-g++-10   /usr/local/bin/aarch64-linux-gnu-g++
+          ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/local/bin/aarch64-linux-gnu-gcc
+          ln -sf /usr/bin/aarch64-linux-gnu-g++-10 /usr/local/bin/aarch64-linux-gnu-g++
           aarch64-linux-gnu-gcc --version | head -1
 
       - name: Fetch 5.10.252 source
@@ -43,25 +43,12 @@ jobs:
       - name: Apply king6818 board support
         run: |
           set -e
-          D=src/arch/arm64/boot/dts/nexell
-          # 两个 dts 来自 4.14 移植仓库（hzh21/s5p6818_linux-xiaoY_king6818）
-          curl -sSLf -o $D/s5p6818-king6818.dts \
-            https://raw.githubusercontent.com/hzh21/s5p6818_linux-xiaoY_king6818/master/arch/arm64/boot/dts/nexell/s5p6818-king6818.dts
-          curl -sSLf -o $D/s5p6818-king6818-common.dtsi \
-            https://raw.githubusercontent.com/hzh21/s5p6818_linux-xiaoY_king6818/master/arch/arm64/boot/dts/nexell/s5p6818-king6818-common.dtsi
-
-          # 补丁 1：5.10 的 s5p6818.dtsi 已在顶层 include pinctrl，
-          #          common.dtsi 里 soc 内的那行会重复包含 -> 语法错，删掉
-          sed -i '/#include "s5p6818-pinctrl.dtsi"/d' $D/s5p6818-king6818-common.dtsi
-
-          # 补丁 2：5.10 把 SoC 节点改名 soc -> soc@0，
-          #          写 soc { } 会新建节点导致标签全部重复，必须同名合并
-          sed -i 's|^\tsoc {$|\tsoc@0 {|' $D/s5p6818-king6818-common.dtsi
-
-          # 补丁 3：把 dtb 目标加进 nexell/Makefile
-          sed -i 's|^\ts5p6818-nanopim3.dtb$|\ts5p6818-nanopim3.dtb \\\n\ts5p6818-king6818.dtb|' $D/Makefile
-          echo '--- Makefile ---'; cat $D/Makefile
-          echo '--- 补丁核对 ---'; grep -nE "soc@0 \{|pinctrl.dtsi" $D/s5p6818-king6818-common.dtsi | head
+          # 补丁脚本与 gmac glue 驱动都放在 ci/5.10-king6818 分支里，
+          # 和板上干跑用的是同一份，改一处两边同步生效
+          RAW=https://raw.githubusercontent.com/hzh21/s5p6818_linux-xiaoY_king6818
+          curl -sSLf -o /tmp/apply-patches.sh \
+            $RAW/refs/heads/ci/5.10-king6818/ci/apply-patches.sh
+          bash /tmp/apply-patches.sh src
 
       - name: Configure
         working-directory: src
@@ -81,9 +68,56 @@ jobs:
           # 板上现役内核同样是空的（rootfs 在 /dev/mmcblk2p2），不影响启动
           ./scripts/config --set-str CONFIG_INITRAMFS_SOURCE ""
 
+          # --- 以太网：必须内建，否则只换 Image 时完全没网，救不回来 ---
+          ./scripts/config --enable CONFIG_STMMAC_ETH
+          ./scripts/config --enable CONFIG_STMMAC_PLATFORM
+          ./scripts/config --enable CONFIG_DWMAC_GENERIC
+          ./scripts/config --enable CONFIG_DWMAC_NEXELL
+          ./scripts/config --enable CONFIG_FIXED_PHY
+          ./scripts/config --enable CONFIG_PHYLIB
+
+          # --- 路由/防火墙：板上 iptables 是 nf_tables 后端，容器用 bridge+veth ---
+          ./scripts/config --enable CONFIG_NF_TABLES
+          ./scripts/config --enable CONFIG_NF_TABLES_INET
+          ./scripts/config --enable CONFIG_NF_TABLES_IPV4
+          ./scripts/config --enable CONFIG_NF_TABLES_IPV6
+          ./scripts/config --enable CONFIG_NF_TABLES_NETDEV
+          ./scripts/config --enable CONFIG_NFT_CT
+          ./scripts/config --enable CONFIG_NFT_NAT
+          ./scripts/config --enable CONFIG_NFT_MASQ
+          ./scripts/config --enable CONFIG_NFT_REDIR
+          ./scripts/config --enable CONFIG_NFT_REJECT
+          ./scripts/config --enable CONFIG_NFT_LOG
+          ./scripts/config --enable CONFIG_NFT_LIMIT
+          ./scripts/config --enable CONFIG_NFT_COMPAT
+          ./scripts/config --enable CONFIG_NF_CONNTRACK
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_MARK
+          ./scripts/config --enable CONFIG_NF_NAT
+          ./scripts/config --enable CONFIG_NF_NAT_MASQUERADE
+          ./scripts/config --enable CONFIG_NETFILTER_XTABLES
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_ADDRTYPE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_COMMENT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_MULTIPORT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_LIMIT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_MARK
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_CONNTRACK
+          ./scripts/config --enable CONFIG_IP_NF_IPTABLES
+          ./scripts/config --enable CONFIG_IP_NF_FILTER
+          ./scripts/config --enable CONFIG_IP_NF_NAT
+          ./scripts/config --enable CONFIG_IP_NF_MANGLE
+          ./scripts/config --enable CONFIG_IP_NF_TARGET_MASQUERADE
+          ./scripts/config --enable CONFIG_BRIDGE
+          ./scripts/config --enable CONFIG_VETH
+          ./scripts/config --enable CONFIG_BRIDGE_NETFILTER
+
           # 网络队列调优（旁路由：解决短视频/大流量挤占）
           ./scripts/config --enable CONFIG_NET_SCH_FQ
           ./scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
+          ./scripts/config --enable CONFIG_NET_SCH_HTB
+          ./scripts/config --enable CONFIG_NET_CLS_U32
+          ./scripts/config --enable CONFIG_NET_EMATCH
+          ./scripts/config --enable CONFIG_XFRM_USER
+          ./scripts/config --enable CONFIG_INET_ESP
           # 低延迟计时：HZ 是 choice 派生量，必须切 choice 成员而不是改 CONFIG_HZ
           ./scripts/config --disable CONFIG_HZ_250
           ./scripts/config --enable CONFIG_HZ_1000
@@ -97,8 +131,11 @@ jobs:
 
           make olddefconfig
           echo '--- 关键配置核对 ---'
-          for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_NET_SCH_FQ CONFIG_NET_SCH_FQ_CODEL \
-                   CONFIG_ZRAM CONFIG_ZSMALLOC CONFIG_CRYPTO_LZ4 CONFIG_LOCALVERSION; do
+          for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_LOCALVERSION \
+                   CONFIG_STMMAC_ETH CONFIG_DWMAC_NEXELL CONFIG_FIXED_PHY \
+                   CONFIG_NF_TABLES CONFIG_NFT_NAT CONFIG_NFT_MASQ \
+                   CONFIG_NF_CONNTRACK CONFIG_NET_SCH_FQ CONFIG_NET_SCH_HTB \
+                   CONFIG_ZRAM CONFIG_CRYPTO_LZ4; do
             grep -E "^$s=|^# $s is not set" .config || echo "MISSING $s"
           done
 
@@ -114,7 +151,9 @@ jobs:
                Image dtbs
           ls -lh arch/arm64/boot/Image
           ls -lh arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
-          strings arch/arm64/boot/Image | grep -m1 "5.10.252" || true
+          echo '--- 确认 gmac 驱动进了内核 ---'
+          grep -c "nexell-dwmac" System.map || true
+          grep -E "^CONFIG_(DWMAC_NEXELL|STMMAC_ETH|NF_TABLES|NFT_NAT)=" .config
 
       - name: Build modules
         id: modules
