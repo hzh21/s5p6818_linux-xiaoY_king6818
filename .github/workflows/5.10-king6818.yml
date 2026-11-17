@@ -76,6 +76,10 @@ jobs:
 
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          # nanopi3_linux_defconfig 带死了厂商本机路径 /home/yulee/work/initramfs，
+          # 不清空会导致 usr/initramfs_data.cpio 生成失败。
+          # 板上现役内核同样是空的（rootfs 在 /dev/mmcblk2p2），不影响启动
+          ./scripts/config --set-str CONFIG_INITRAMFS_SOURCE ""
 
           # 网络队列调优（旁路由：解决短视频/大流量挤占）
           ./scripts/config --enable CONFIG_NET_SCH_FQ
