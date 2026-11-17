@@ -39,6 +39,19 @@ awk '{print}
      }' "$D/s5p6818-king6818-common.dtsi" > /tmp/dts.new
 mv /tmp/dts.new "$D/s5p6818-king6818-common.dtsi"
 
+# 补丁 3b：4.14 上 mdio 总线是注册了的（stmmac-0），PHY 复位脚 gpio_e22
+#           走的是 mdio reset 流程。5.10 只要见到 fixed-link 就不建 mdio，
+#           那个复位脚就永远不会释放，交换芯片可能一直处于复位态。
+#           加 snps,dwmac-mdio 兼容串，让 mdio 和 fixed-link 同时存在
+awk '/^[ \t]*mdio \{$/ && !d2 {
+	print
+	print "\t\t\t\tcompatible = \"snps,dwmac-mdio\";"
+	d2 = 1
+	next
+     }
+     { print }' "$D/s5p6818-king6818-common.dtsi" > /tmp/dts2.new
+mv /tmp/dts2.new "$D/s5p6818-king6818-common.dtsi"
+
 # 补丁 4：把 dtb 目标加进 nexell/Makefile
 sed -i 's|^\ts5p6818-nanopim3.dtb$|\ts5p6818-nanopim3.dtb \\\n\ts5p6818-king6818.dtb|' \
 	"$D/Makefile"
