@@ -24,9 +24,13 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends \
             git curl ca-certificates build-essential \
-            gcc-10-aarch64-linux-gnu \
-            bc bison flex libssl-dev libelf-dev device-tree-compiler
-          aarch64-linux-gnu-gcc-10 --version | head -1
+            gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu \
+            bc bison flex libssl-dev libelf-dev device-tree-compiler pkg-config
+          # 5.10 的 scripts/Kconfig.include 会探测 $(CROSS_COMPILE)gcc，
+          # 而包只提供带 -10 后缀的二进制 -> 建软链让无后缀名可用
+          ln -sf /usr/bin/aarch64-linux-gnu-gcc-10   /usr/local/bin/aarch64-linux-gnu-gcc
+          ln -sf /usr/bin/aarch64-linux-gnu-g++-10   /usr/local/bin/aarch64-linux-gnu-g++
+          aarch64-linux-gnu-gcc --version | head -1
 
       - name: Fetch 5.10.252 source
         run: |
@@ -64,7 +68,6 @@ jobs:
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
-          CC: aarch64-linux-gnu-gcc-10
         run: |
           set -e
           touch .scmversion
@@ -100,7 +103,6 @@ jobs:
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
-          CC: aarch64-linux-gnu-gcc-10
         run: |
           set -e
           make -j$(nproc) \
@@ -117,7 +119,6 @@ jobs:
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
-          CC: aarch64-linux-gnu-gcc-10
         run: |
           make -j$(nproc) \
                KCFLAGS="-O3 -march=armv8-a+crc -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
