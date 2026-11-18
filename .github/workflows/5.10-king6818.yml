@@ -25,7 +25,8 @@ jobs:
           apt-get install -y -qq --no-install-recommends \
             git curl ca-certificates build-essential \
             gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu \
-            bc bison flex libssl-dev libelf-dev device-tree-compiler pkg-config
+            bc bison flex libssl-dev libelf-dev device-tree-compiler pkg-config \
+            busybox-static cpio
           # 5.10 的 scripts/Kconfig.include 会探测 $(CROSS_COMPILE)gcc，
           # 而包只提供带 -10 后缀的二进制 -> 建软链让无后缀名可用
           ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/local/bin/aarch64-linux-gnu-gcc
@@ -50,6 +51,25 @@ jobs:
             $RAW/refs/heads/ci/5.10-king6818/ci/apply-patches.sh
           bash /tmp/apply-patches.sh src
 
+      - name: Build initramfs (overlay root)
+        run: |
+          set -e
+          # FriendlyELEC 的根是 overlay：lower=p2, upper=p3/root, work=p3/work。
+          # 4.14 的私有补丁认 bootargs 里的 data=，5.10 主线不认，所以内置一个
+          # 最小 initramfs 在 systemd 之前把 overlay 拼起来。
+          RAW=https://raw.githubusercontent.com/hzh21/s5p6818_linux-xiaoY_king6818
+          IR="$GITHUB_WORKSPACE/initramfs"
+          rm -rf "$IR"
+          mkdir -p "$IR/bin" "$IR/dev" "$IR/proc" "$IR/sys" \
+                   "$IR/lower" "$IR/upper" "$IR/newroot"
+          curl -sSLf -o "$IR/init" \
+            $RAW/refs/heads/ci/5.10-king6818/ci/initramfs-init.sh
+          chmod +x "$IR/init"
+          cp -a /bin/busybox "$IR/bin/busybox"
+          ln -sf busybox "$IR/bin/sh"
+          ls -l "$IR"
+          ls -l "$IR/bin"
+
       - name: Configure
         working-directory: src
         env:
@@ -63,10 +83,13 @@ jobs:
 
           ./scripts/config --set-str CONFIG_LOCALVERSION "-s5p6818"
           ./scripts/config --disable CONFIG_LOCALVERSION_AUTO
-          # nanopi3_linux_defconfig 带死了厂商本机路径 /home/yulee/work/initramfs，
-          # 不清空会导致 usr/initramfs_data.cpio 生成失败。
-          # 板上现役内核同样是空的（rootfs 在 /dev/mmcblk2p2），不影响启动
-          ./scripts/config --set-str CONFIG_INITRAMFS_SOURCE ""
+          # 内置 initramfs：负责把 p2(lower) + p3/root(upper) 组成 overlay 根
+          ./scripts/config --set-str CONFIG_INITRAMFS_SOURCE "$GITHUB_WORKSPACE/initramfs"
+          ./scripts/config --enable CONFIG_OVERLAY_FS
+          ./scripts/config --enable CONFIG_BLK_DEV_INITRD
+          ./scripts/config --enable CONFIG_DEVTMPFS
+          ./scripts/config --enable CONFIG_DEVTMPFS_MOUNT
+          ./scripts/config --enable CONFIG_RD_GZIP
 
           # --- 以太网：必须内建，否则只换 Image 时完全没网，救不回来 ---
           ./scripts/config --enable CONFIG_STMMAC_ETH
@@ -153,6 +176,9 @@ jobs:
           ls -lh arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
           echo '--- 确认 gmac 驱动进了内核 ---'
           grep -c "nexell-dwmac" System.map || true
+          echo '--- 确认 initramfs 进了内核 ---'
+          ls -lh usr/initramfs_data.cpio* 2>/dev/null || echo "NO initramfs_data"
+          grep -ac "king6818 overlay init" arch/arm64/boot/Image || echo "init script NOT found in Image"
           grep -E "^CONFIG_(DWMAC_NEXELL|STMMAC_ETH|NF_TABLES|NFT_NAT)=" .config
 
       - name: Build modules
