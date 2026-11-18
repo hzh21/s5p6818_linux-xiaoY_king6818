@@ -27,9 +27,9 @@ sed -i 's|^\tsoc {$|\tsoc@0 {|' "$D/s5p6818-king6818-common.dtsi"
 
 # 补丁 3：重写 gmac0 节点，让 5.10 的 phylink 能真正 attach 到板载 PHY。
 #
-#   实测基准：这块板子的 PHY 在 MDIO 地址 7。4.14 一直用 nanopi3 的 dtb
-#   （那份 dtb 写的是 phy-addr = 7），所以 4.14 能上网；仓库里 king6818
-#   的 dts 写 4，是错的。
+#   实测基准（板子上 4.14 正常工作时 dump 出来的活 DT）：
+#     RTL8211E 挂在 MDIO 地址 4，snps,phy-addr = <4>，phy-mode = rgmii，
+#     reset = gpio_e22 低有效，延时 0/10ms/30ms，MAC 节点下没有 fixed-link。
 #
 #   5.10 的三条硬性要求（对着 drivers/net/ethernet/stmicro/stmmac 核过）：
 #     a) mdio 子节点必须带 compatible = "snps,dwmac-mdio"。
@@ -59,7 +59,7 @@ new = '''\t\tgmac0:ethernet@c0060000 {
 
 \t\t\tphy-mode = "rgmii";
 \t\t\tphy-handle = <&ethernet_phy>;
-\t\t\tsnps,phy-addr = <7>;
+\t\t\tsnps,phy-addr = <4>;
 
 \t\t\tsnps,reset-gpio = <&gpio_e 22 0>;
 \t\t\tsnps,reset-active-low;
@@ -71,8 +71,8 @@ new = '''\t\tgmac0:ethernet@c0060000 {
 \t\t\t\t#address-cells = <1>;
 \t\t\t\t#size-cells = <0>;
 
-\t\t\t\tethernet_phy: ethernet-phy@7 {
-\t\t\t\t\treg = <7>;
+\t\t\t\tethernet_phy: ethernet-phy@4 {
+\t\t\t\t\treg = <4>;
 \t\t\t\t};
 \t\t\t};
 \t\t};
@@ -81,7 +81,7 @@ out, n = re.subn(r'\t\tgmac0:ethernet@c0060000 \{.*?\n\t\t\};\n', new, src, flag
 if n != 1:
     sys.exit('gmac0 node matched %d times, expected 1' % n)
 open(p, 'w').write(out)
-print('gmac0 rewritten: phy-mode=rgmii, phy-handle, phy addr = 7')
+print('gmac0 rewritten: phy-mode=rgmii, phy-handle, phy addr = 4')
 PY
 
 # 补丁 4：把 dtb 目标加进 nexell/Makefile
