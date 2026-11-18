@@ -25,32 +25,27 @@ sed -i '/#include "s5p6818-pinctrl.dtsi"/d' "$D/s5p6818-king6818-common.dtsi"
 #          写 soc { } 会新建节点导致标签全部重复，必须同名合并
 sed -i 's|^\tsoc {$|\tsoc@0 {|' "$D/s5p6818-king6818-common.dtsi"
 
-# 补丁 3：板子的 RGMII 是 fixed-link（4.14 上 mdio 的 addr4 从未绑定驱动，
-#          实际走的是 fixed-0 总线）。4.14 把 fixed-link 写在 ethernet-phy@4
-#          里面，而 5.10 的 of_phy_is_fixed_link() 只认 MAC 节点下的
-#          fixed-link，所以在 gmac0 里补一份
-awk '{print}
-     /snps,reset-delays-us/ && !done {
-	print "\t\t\tfixed-link {"
-	print "\t\t\t\tspeed = <1000>;"
-	print "\t\t\t\tfull-duplex;"
-	print "\t\t\t};"
-	done=1
-     }' "$D/s5p6818-king6818-common.dtsi" > /tmp/dts.new
+# 补丁 3：绝不能给 gmac0 节点加 fixed-link。
+#          5.10 的 of_phy_is_fixed_link(MAC 节点) 一旦为真，phylink 就进入
+#          MLO_AN_FIXED，完全不再 attach PHY。RGMII 的 RX 时钟由 PHY 提供，
+#          PHY 不被初始化 -> RX DMA 一个包都收不到（实测 RX=0，TX 记账正常）。
+#          4.14 跑的是 nanopi3 的 dtb，没有这个属性，走的是真实 PHY 路径。
+#          所以这里反过来：删掉 mdio 子节点，让 phy_addr 保持 -1，
+#          stmmac_mdio_register() 会扫描 0..31 自动发现 PHY。
+awk '/^\t\t\tmdio \{$/ { skip = 1; next }
+     skip && /^\t\t\t\};$/ { skip = 0; next }
+     !skip { print }' \
+	"$D/s5p6818-king6818-common.dtsi" > /tmp/dts.new
 mv /tmp/dts.new "$D/s5p6818-king6818-common.dtsi"
 
-# 补丁 3b：4.14 上 mdio 总线是注册了的（stmmac-0），PHY 复位脚 gpio_e22
-#           走的是 mdio reset 流程。5.10 只要见到 fixed-link 就不建 mdio，
-#           那个复位脚就永远不会释放，交换芯片可能一直处于复位态。
-#           加 snps,dwmac-mdio 兼容串，让 mdio 和 fixed-link 同时存在
-awk '/^[ \t]*mdio \{$/ && !d2 {
-	print
-	print "\t\t\t\tcompatible = \"snps,dwmac-mdio\";"
-	d2 = 1
-	next
-     }
-     { print }' "$D/s5p6818-king6818-common.dtsi" > /tmp/dts2.new
-mv /tmp/dts2.new "$D/s5p6818-king6818-common.dtsi"
+# 补丁 3b：5.10 只认 snps,reset-gpios（复数），极性看 gpio flag，
+#          不再读 snps,reset-active-low。复位脚 gpio_e22 低有效 -> flag=1
+sed -i 's|snps,reset-gpio = <&gpio_e 22 0>;|snps,reset-gpios = <\&gpio_e 22 1>;|' \
+	"$D/s5p6818-king6818-common.dtsi"
+
+# 补丁 3c：删掉 snps,phy-addr，让 plat->phy_addr = -1，
+#          stmmac_mdio_register() 扫全总线后自动回填找到的地址
+sed -i '/snps,phy-addr/d' "$D/s5p6818-king6818-common.dtsi"
 
 # 补丁 4：把 dtb 目标加进 nexell/Makefile
 sed -i 's|^\ts5p6818-nanopim3.dtb$|\ts5p6818-nanopim3.dtb \\\n\ts5p6818-king6818.dtb|' \
@@ -77,8 +72,10 @@ fi
 
 echo '--- dtb Makefile ---'
 cat "$D/Makefile"
-echo '--- dts 补丁核对 ---'
-grep -nE 'soc@0 \{|pinctrl\.dtsi|fixed-link|speed = <1000>|full-duplex' \
+echo '--- dts 补丁核对（gmac0 最终形态，不应出现 fixed-link / mdio / phy-addr）---'
+sed -n '/gmac0:ethernet@c0060000/,/^\t\t};/p' "$D/s5p6818-king6818-common.dtsi"
+echo '--- 关键点 ---'
+grep -nE 'soc@0 \{|gmac0:|fixed-link|mdio \{|phy-addr|reset-gpios' \
 	"$D/s5p6818-king6818-common.dtsi" | head
 echo '--- 驱动接入核对 ---'
 grep -n "DWMAC_NEXELL" "$S/Kconfig" "$S/Makefile"
