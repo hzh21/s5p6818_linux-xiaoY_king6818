@@ -28,10 +28,17 @@
  * A fixed-link node directly under the MAC node makes phylink pick
  * MLO_AN_FIXED, which means the PHY is never attached and never initialised.
  * On RGMII the RX clock comes from the PHY, so RX stayed at 0 packets while
- * TX counters still moved.  The board dts now drops that node (and the mdio
- * subnode), leaving phy_addr at -1 so stmmac_mdio_register() scans 0..31 and
- * backfills the address it finds.  That -1 is later used as an index into
- * mdiobus_get_phy(), so clamp it here in case the bus is empty.
+ * TX counters still moved.
+ *
+ * v4: the real fix for RX is in the device tree, not here.  In 5.10
+ * stmmac_mdio_register() only allocates/registers an MDIO bus when the dts
+ * has an mdio subnode with compatible = "snps,dwmac-mdio" (mdio_bus_data is
+ * NULL otherwise), and phylink only finds the PHY through the MAC node's
+ * phy-handle.  The board dts had neither, so there was no bus and no PHY:
+ * the MAC never learned the link speed and RGMII RX never clocked.
+ * The dts now carries phy-mode/phy-handle/mdio/snps,reset-gpios for PHY 7
+ * (the address the working 4.14 nanopi3 dtb uses).  This driver version adds
+ * explicit diagnostics for both conditions.
  */
 
 #include <linux/module.h>
@@ -189,23 +196,31 @@ static int nexell_gmac_probe(struct platform_device *pdev)
 		goto err_exit;
 
 	/*
-	 * The board dts carries neither "snps,phy-addr" nor an "mdio" subnode,
-	 * so stmmac_dvr_probe() -> stmmac_mdio_register() scans the whole bus
-	 * and backfills plat->phy_addr with whatever it found.  If nothing was
-	 * found the value is still -1, and stmmac_init_phy() would use it as an
-	 * index into mdiobus_get_phy() later on - clamp it so open() fails with
-	 * a clean "no phy at addr 0" instead of walking off the array.
+	 * 诊断输出：这三项决定 phylink 能不能真正把 PHY 接起来。
+	 *   mdio_bus_data == NULL -> dts 的 mdio 子节点没有 snps,dwmac-mdio，
+	 *                            总线根本没注册，PHY 永远不会被 attach，
+	 *                            snps,reset-gpios 的复位脉冲也不会发；
+	 *   phy_node == NULL      -> dts 没有 phy-handle，phylink 拿不到 phy
+	 *                            fwnode，链路停在 MLO_AN_PHY 却没有 phydev；
+	 *   phy_addr < 0          -> 既没写 phy-addr 也没扫到 PHY。
 	 */
+	dev_info(&pdev->dev,
+		 "nexell-dwmac: mdio=%s phy-handle=%s phy_addr=%d\n",
+		 plat_dat->mdio_bus_data ? "registered" : "NONE",
+		 plat_dat->phy_node ? "yes" : "no",
+		 plat_dat->phy_addr);
+
+	if (!plat_dat->mdio_bus_data)
+		dev_err(&pdev->dev,
+			"no MDIO bus registered, check compatible = \"snps,dwmac-mdio\"\n");
+
 	if (plat_dat->phy_addr < 0) {
 		dev_warn(&pdev->dev,
 			 "no PHY responded on the MDIO bus, clamping phy_addr to 0\n");
 		plat_dat->phy_addr = 0;
-	} else {
-		dev_info(&pdev->dev, "MDIO PHY discovered at address %d\n",
-			 plat_dat->phy_addr);
 	}
 
-	dev_info(&pdev->dev, "nexell-dwmac ready (v3, phy auto-detect)\n");
+	dev_info(&pdev->dev, "nexell-dwmac ready (v4, phylink phy-handle)\n");
 	return 0;
 
 err_exit:
