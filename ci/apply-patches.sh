@@ -25,27 +25,64 @@ sed -i '/#include "s5p6818-pinctrl.dtsi"/d' "$D/s5p6818-king6818-common.dtsi"
 #          写 soc { } 会新建节点导致标签全部重复，必须同名合并
 sed -i 's|^\tsoc {$|\tsoc@0 {|' "$D/s5p6818-king6818-common.dtsi"
 
-# 补丁 3：绝不能给 gmac0 节点加 fixed-link。
-#          5.10 的 of_phy_is_fixed_link(MAC 节点) 一旦为真，phylink 就进入
-#          MLO_AN_FIXED，完全不再 attach PHY。RGMII 的 RX 时钟由 PHY 提供，
-#          PHY 不被初始化 -> RX DMA 一个包都收不到（实测 RX=0，TX 记账正常）。
-#          4.14 跑的是 nanopi3 的 dtb，没有这个属性，走的是真实 PHY 路径。
-#          所以这里反过来：删掉 mdio 子节点，让 phy_addr 保持 -1，
-#          stmmac_mdio_register() 会扫描 0..31 自动发现 PHY。
-awk '/^\t\t\tmdio \{$/ { skip = 1; next }
-     skip && /^\t\t\t\};$/ { skip = 0; next }
-     !skip { print }' \
-	"$D/s5p6818-king6818-common.dtsi" > /tmp/dts.new
-mv /tmp/dts.new "$D/s5p6818-king6818-common.dtsi"
+# 补丁 3：重写 gmac0 节点，让 5.10 的 phylink 能真正 attach 到板载 PHY。
+#
+#   实测基准：这块板子的 PHY 在 MDIO 地址 7。4.14 一直用 nanopi3 的 dtb
+#   （那份 dtb 写的是 phy-addr = 7），所以 4.14 能上网；仓库里 king6818
+#   的 dts 写 4，是错的。
+#
+#   5.10 的三条硬性要求（对着 drivers/net/ethernet/stmicro/stmmac 核过）：
+#     a) mdio 子节点必须带 compatible = "snps,dwmac-mdio"。
+#        stmmac_platform.c:337 只会对带这个 compatible 的子节点置 mdio=true，
+#        否则 mdio_bus_data 为 NULL，stmmac_mdio_register() 根本不注册总线，
+#        PHY 从头到尾不会被 attach，snps,reset-gpios 也不会被脉冲复位。
+#     b) MAC 节点必须有 phy-handle。5.10 的 stmmac_phy_setup() 把 MAC 节点
+#        作为 fwnode 交给 phylink_create()，phylink 只会顺着 phy-handle 找
+#        phy fwnode；没有它就没有 phydev，link_an_mode 停在 MLO_AN_PHY 却
+#        无人可谈，MAC 速度恒为 UNKNOWN，RGMII 的 RX 时钟建立不起来
+#        -> 表现就是 TX 计数正常、RX 恒为 0。
+#     c) 复位用复数 snps,reset-gpios（stmmac_mdio.c:307 走
+#        devm_gpiod_get_optional(dev, "snps,reset")），低有效 -> flag = 1。
+#        单数的 snps,reset-gpio + snps,reset-active-low 一并保留，
+#        这样同一个 dtb 在 4.14 的 BSP 驱动下也认得。
+python3 - "$D/s5p6818-king6818-common.dtsi" <<'PY'
+import re, sys
+p = sys.argv[1]
+src = open(p).read()
+new = '''\t\tgmac0:ethernet@c0060000 {
+\t\t\tpinctrl-names = "default";
+\t\t\tpinctrl-0 = <&gmac_pins>;
 
-# 补丁 3b：5.10 只认 snps,reset-gpios（复数），极性看 gpio flag，
-#          不再读 snps,reset-active-low。复位脚 gpio_e22 低有效 -> flag=1
-sed -i 's|snps,reset-gpio = <&gpio_e 22 0>;|snps,reset-gpios = <\&gpio_e 22 1>;|' \
-	"$D/s5p6818-king6818-common.dtsi"
+\t\t\tstatus = "okay";
+\t\t\t#address-cells = <0x1>;
+\t\t\t#size-cells = <0x0>;
 
-# 补丁 3c：删掉 snps,phy-addr，让 plat->phy_addr = -1，
-#          stmmac_mdio_register() 扫全总线后自动回填找到的地址
-sed -i '/snps,phy-addr/d' "$D/s5p6818-king6818-common.dtsi"
+\t\t\tphy-mode = "rgmii";
+\t\t\tphy-handle = <&ethernet_phy>;
+\t\t\tsnps,phy-addr = <7>;
+
+\t\t\tsnps,reset-gpio = <&gpio_e 22 0>;
+\t\t\tsnps,reset-active-low;
+\t\t\tsnps,reset-gpios = <&gpio_e 22 1>;
+\t\t\tsnps,reset-delays-us = <0 10000 30000>;
+
+\t\t\tmdio {
+\t\t\t\tcompatible = "snps,dwmac-mdio";
+\t\t\t\t#address-cells = <1>;
+\t\t\t\t#size-cells = <0>;
+
+\t\t\t\tethernet_phy: ethernet-phy@7 {
+\t\t\t\t\treg = <7>;
+\t\t\t\t};
+\t\t\t};
+\t\t};
+'''
+out, n = re.subn(r'\t\tgmac0:ethernet@c0060000 \{.*?\n\t\t\};\n', new, src, flags=re.S)
+if n != 1:
+    sys.exit('gmac0 node matched %d times, expected 1' % n)
+open(p, 'w').write(out)
+print('gmac0 rewritten: phy-mode=rgmii, phy-handle, phy addr = 7')
+PY
 
 # 补丁 4：把 dtb 目标加进 nexell/Makefile
 sed -i 's|^\ts5p6818-nanopim3.dtb$|\ts5p6818-nanopim3.dtb \\\n\ts5p6818-king6818.dtb|' \
@@ -72,10 +109,10 @@ fi
 
 echo '--- dtb Makefile ---'
 cat "$D/Makefile"
-echo '--- dts 补丁核对（gmac0 最终形态，不应出现 fixed-link / mdio / phy-addr）---'
+echo '--- dts 补丁核对（gmac0 最终形态：应有 phy-handle / snps,dwmac-mdio，不应有 fixed-link）---'
 sed -n '/gmac0:ethernet@c0060000/,/^\t\t};/p' "$D/s5p6818-king6818-common.dtsi"
 echo '--- 关键点 ---'
-grep -nE 'soc@0 \{|gmac0:|fixed-link|mdio \{|phy-addr|reset-gpios' \
+grep -nE 'soc@0 \{|gmac0:|fixed-link|snps,dwmac-mdio|phy-handle|phy-addr|reset-gpios' \
 	"$D/s5p6818-king6818-common.dtsi" | head
 echo '--- 驱动接入核对 ---'
 grep -n "DWMAC_NEXELL" "$S/Kconfig" "$S/Makefile"
