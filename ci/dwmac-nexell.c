@@ -23,6 +23,15 @@
  *
  * So: bring the TX clock up and deassert the GMAC reset in probe, strictly
  * before stmmac_dvr_probe().  Order matters: clock first, reset second.
+ *
+ * v3 (fix "eth0 up but RX is always 0"):
+ * A fixed-link node directly under the MAC node makes phylink pick
+ * MLO_AN_FIXED, which means the PHY is never attached and never initialised.
+ * On RGMII the RX clock comes from the PHY, so RX stayed at 0 packets while
+ * TX counters still moved.  The board dts now drops that node (and the mdio
+ * subnode), leaving phy_addr at -1 so stmmac_mdio_register() scans 0..31 and
+ * backfills the address it finds.  That -1 is later used as an index into
+ * mdiobus_get_phy(), so clamp it here in case the bus is empty.
  */
 
 #include <linux/module.h>
@@ -179,7 +188,24 @@ static int nexell_gmac_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_exit;
 
-	dev_info(&pdev->dev, "nexell-dwmac ready (v2, probe-time clk+reset)\n");
+	/*
+	 * The board dts carries neither "snps,phy-addr" nor an "mdio" subnode,
+	 * so stmmac_dvr_probe() -> stmmac_mdio_register() scans the whole bus
+	 * and backfills plat->phy_addr with whatever it found.  If nothing was
+	 * found the value is still -1, and stmmac_init_phy() would use it as an
+	 * index into mdiobus_get_phy() later on - clamp it so open() fails with
+	 * a clean "no phy at addr 0" instead of walking off the array.
+	 */
+	if (plat_dat->phy_addr < 0) {
+		dev_warn(&pdev->dev,
+			 "no PHY responded on the MDIO bus, clamping phy_addr to 0\n");
+		plat_dat->phy_addr = 0;
+	} else {
+		dev_info(&pdev->dev, "MDIO PHY discovered at address %d\n",
+			 plat_dat->phy_addr);
+	}
+
+	dev_info(&pdev->dev, "nexell-dwmac ready (v3, phy auto-detect)\n");
 	return 0;
 
 err_exit:
