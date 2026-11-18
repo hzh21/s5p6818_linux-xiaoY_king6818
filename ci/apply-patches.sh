@@ -45,44 +45,50 @@ sed -i 's|^\tsoc {$|\tsoc@0 {|' "$D/s5p6818-king6818-common.dtsi"
 #        devm_gpiod_get_optional(dev, "snps,reset")），低有效 -> flag = 1。
 #        单数的 snps,reset-gpio + snps,reset-active-low 一并保留，
 #        这样同一个 dtb 在 4.14 的 BSP 驱动下也认得。
-python3 - "$D/s5p6818-king6818-common.dtsi" <<'PY'
-import re, sys
-p = sys.argv[1]
-src = open(p).read()
-new = '''\t\tgmac0:ethernet@c0060000 {
-\t\t\tpinctrl-names = "default";
-\t\t\tpinctrl-0 = <&gmac_pins>;
+# 注：CI 的 ubuntu:20.04 容器里没有 python3，这里只用 printf + awk。
+printf '%b\n' \
+	'\t\tgmac0:ethernet@c0060000 {' \
+	'\t\t\tpinctrl-names = "default";' \
+	'\t\t\tpinctrl-0 = <&gmac_pins>;' \
+	'' \
+	'\t\t\tstatus = "okay";' \
+	'\t\t\t#address-cells = <0x1>;' \
+	'\t\t\t#size-cells = <0x0>;' \
+	'' \
+	'\t\t\tphy-mode = "rgmii";' \
+	'\t\t\tphy-handle = <&ethernet_phy>;' \
+	'\t\t\tsnps,phy-addr = <4>;' \
+	'' \
+	'\t\t\tsnps,reset-gpio = <&gpio_e 22 0>;' \
+	'\t\t\tsnps,reset-active-low;' \
+	'\t\t\tsnps,reset-gpios = <&gpio_e 22 1>;' \
+	'\t\t\tsnps,reset-delays-us = <0 10000 30000>;' \
+	'' \
+	'\t\t\tmdio {' \
+	'\t\t\t\tcompatible = "snps,dwmac-mdio";' \
+	'\t\t\t\t#address-cells = <1>;' \
+	'\t\t\t\t#size-cells = <0>;' \
+	'' \
+	'\t\t\t\tethernet_phy: ethernet-phy@4 {' \
+	'\t\t\t\t\treg = <4>;' \
+	'\t\t\t\t};' \
+	'\t\t\t};' \
+	'\t\t};' \
+	> /tmp/gmac_block.txt
 
-\t\t\tstatus = "okay";
-\t\t\t#address-cells = <0x1>;
-\t\t\t#size-cells = <0x0>;
+awk '
+NR == FNR { blk = blk $0 "\n"; next }
+index($0, "gmac0:ethernet@c0060000 {") { skip = 1; next }
+skip && $0 == "\t\t};" { skip = 0; printf "%s", blk; next }
+skip { next }
+{ print }
+' /tmp/gmac_block.txt "$D/s5p6818-king6818-common.dtsi" > /tmp/dts.new
 
-\t\t\tphy-mode = "rgmii";
-\t\t\tphy-handle = <&ethernet_phy>;
-\t\t\tsnps,phy-addr = <4>;
-
-\t\t\tsnps,reset-gpio = <&gpio_e 22 0>;
-\t\t\tsnps,reset-active-low;
-\t\t\tsnps,reset-gpios = <&gpio_e 22 1>;
-\t\t\tsnps,reset-delays-us = <0 10000 30000>;
-
-\t\t\tmdio {
-\t\t\t\tcompatible = "snps,dwmac-mdio";
-\t\t\t\t#address-cells = <1>;
-\t\t\t\t#size-cells = <0>;
-
-\t\t\t\tethernet_phy: ethernet-phy@4 {
-\t\t\t\t\treg = <4>;
-\t\t\t\t};
-\t\t\t};
-\t\t};
-'''
-out, n = re.subn(r'\t\tgmac0:ethernet@c0060000 \{.*?\n\t\t\};\n', new, src, flags=re.S)
-if n != 1:
-    sys.exit('gmac0 node matched %d times, expected 1' % n)
-open(p, 'w').write(out)
-print('gmac0 rewritten: phy-mode=rgmii, phy-handle, phy addr = 4')
-PY
+if [ "$(grep -c 'phy-handle = <&ethernet_phy>;' /tmp/dts.new)" != "1" ]; then
+	echo "FATAL: gmac0 rewrite failed" >&2
+	exit 1
+fi
+mv /tmp/dts.new "$D/s5p6818-king6818-common.dtsi"
 
 # 补丁 4：把 dtb 目标加进 nexell/Makefile
 sed -i 's|^\ts5p6818-nanopim3.dtb$|\ts5p6818-nanopim3.dtb \\\n\ts5p6818-king6818.dtb|' \
