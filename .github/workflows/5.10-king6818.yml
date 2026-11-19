@@ -26,7 +26,7 @@ jobs:
             git curl ca-certificates build-essential \
             gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu \
             bc bison flex libssl-dev libelf-dev device-tree-compiler pkg-config \
-            busybox-static cpio
+            cpio
           # 5.10 的 scripts/Kconfig.include 会探测 $(CROSS_COMPILE)gcc，
           # 而包只提供带 -10 后缀的二进制 -> 建软链让无后缀名可用
           ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/local/bin/aarch64-linux-gnu-gcc
@@ -51,6 +51,27 @@ jobs:
             $RAW/refs/heads/ci/5.10-king6818/ci/apply-patches.sh
           bash /tmp/apply-patches.sh src
 
+      - name: Fetch arm64 busybox
+        run: |
+          set -e
+          # 重要：本 job 跑在 x86_64 的 ubuntu:20.04 容器里，apt 装的
+          # busybox-static 是 **amd64** 的。把它塞进 aarch64 initramfs 后，
+          # 内核执行 /init（脚本 -> #!/bin/sh）会得到 ENOEXEC(-8)：
+          #   Failed to execute /init (error -8) ... No working init found
+          # 所以直接从 ubuntu-ports 取 arm64 的 deb 解包，并强制校验架构。
+          PORT=http://ports.ubuntu.com/ubuntu-ports
+          curl -sSLf -o /tmp/Packages.gz \
+            $PORT/dists/focal/main/binary-arm64/Packages.gz
+          F=$(gzip -dc /tmp/Packages.gz | awk '/^Package: busybox-static$/{f=1} f&&/^Filename:/{print $2; exit}')
+          [ -n "$F" ] || { echo "找不到 busybox-static arm64"; exit 1; }
+          echo "deb: $F"
+          curl -sSLf -o /tmp/bb.deb "$PORT/$F"
+          rm -rf /tmp/bb && mkdir -p /tmp/bb
+          dpkg-deb -x /tmp/bb.deb /tmp/bb
+          ls -l /tmp/bb/bin/busybox
+          readelf -h /tmp/bb/bin/busybox | grep -E 'Machine|Type'
+          readelf -h /tmp/bb/bin/busybox | grep -q AArch64 || { echo "不是 aarch64！"; exit 1; }
+
       - name: Build initramfs (overlay root)
         run: |
           set -e
@@ -65,10 +86,16 @@ jobs:
           curl -sSLf -o "$IR/init" \
             $RAW/refs/heads/ci/5.10-king6818/ci/initramfs-init.sh
           chmod +x "$IR/init"
-          cp -a /bin/busybox "$IR/bin/busybox"
-          ln -sf busybox "$IR/bin/sh"
-          ls -l "$IR"
+          # 必须是 aarch64 静态 busybox（见上一步）
+          cp /tmp/bb/bin/busybox "$IR/bin/busybox"
+          chmod 755 "$IR/bin/busybox"
+          # init 脚本用到的 applet 都要有入口，否则 exec 时找不到命令
+          for a in sh mount umount mkdir sleep switch_root cat echo test; do
+            ln -sf busybox "$IR/bin/$a"
+          done
+          ln -sf ../bin/busybox "$IR/init.busybox"   # 备用：绝对路径调用
           ls -l "$IR/bin"
+          file "$IR/bin/busybox" 2>/dev/null || readelf -h "$IR/bin/busybox" | grep Machine
 
       - name: Configure
         working-directory: src
