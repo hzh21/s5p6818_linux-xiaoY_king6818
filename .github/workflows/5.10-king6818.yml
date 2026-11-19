@@ -88,7 +88,10 @@ jobs:
           cp /tmp/bb/bin/busybox "$IR/bin/busybox"
           chmod 755 "$IR/bin/busybox"
           # init 脚本用到的 applet 都要有入口，否则 exec 时找不到命令
-          for a in sh mount umount mkdir sleep switch_root cat echo test; do
+          # dmesg/date/tr/ls/sync 是 2026-11-20 加的：init 现在会把启动进度
+          # 和 dmesg 落到启动分区 /logs/510-boot.log，挂死时才查得到现场
+          for a in sh mount umount mkdir sleep switch_root cat echo test \
+                   dmesg date tr ls sync; do
             ln -sf busybox "$IR/bin/$a"
           done
           ln -sf ../bin/busybox "$IR/init.busybox"   # 备用：绝对路径调用
