@@ -16,12 +16,14 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null
 mount -t proc     proc     /proc 2>/dev/null
 mount -t sysfs    sysfs    /sys  2>/dev/null
 
+# 等 mmc 分区出现（5.10 上 dwmmc 探测约 3s）。
+# 用整数 sleep：busybox 的小数 sleep 依赖 FEATURE_FLOAT_SLEEP，不一定编译进来。
 i=0
-while [ $i -lt 50 ]; do
+while [ $i -lt 20 ]; do
     if [ -b /dev/mmcblk2p2 ] && [ -b /dev/mmcblk2p3 ]; then
         break
     fi
-    sleep 0.2
+    sleep 1
     i=$((i + 1))
 done
 
@@ -56,10 +58,11 @@ echo "[initramfs] overlay root ready, switching root"
 
 # 让数据分区在新根里继续可见（内容由 overlay 提供，这里只是挂载点）
 mkdir -p /newroot/mnt/.data
-mount --move /upper /newroot/mnt/.data
+# busybox 的 mount 认 "-o move"，不认 util-linux 的 "--move"
+mount -o move /upper /newroot/mnt/.data
 
-mount --move /proc /newroot/proc
-mount --move /sys  /newroot/sys
-mount --move /dev  /newroot/dev
+mount -o move /proc /newroot/proc
+mount -o move /sys  /newroot/sys
+mount -o move /dev  /newroot/dev
 
 exec switch_root /newroot /sbin/init
