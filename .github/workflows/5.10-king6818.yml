@@ -58,18 +58,16 @@ jobs:
           # busybox-static 是 **amd64** 的。把它塞进 aarch64 initramfs 后，
           # 内核执行 /init（脚本 -> #!/bin/sh）会得到 ENOEXEC(-8)：
           #   Failed to execute /init (error -8) ... No working init found
-          # 所以直接从 ubuntu-ports 取 arm64 的 deb 解包，并强制校验架构。
-          PORT=http://ports.ubuntu.com/ubuntu-ports
-          curl -sSLf -o /tmp/Packages.gz \
-            $PORT/dists/focal/main/binary-arm64/Packages.gz
-          F=$(gzip -dc /tmp/Packages.gz | awk '/^Package: busybox-static$/{f=1} f&&/^Filename:/{print $2; exit}')
-          [ -n "$F" ] || { echo "找不到 busybox-static arm64"; exit 1; }
-          echo "deb: $F"
-          curl -sSLf -o /tmp/bb.deb "$PORT/$F"
+          # 所以直接从 ubuntu-ports 取 focal 的 arm64 deb（版本固定，可复现）。
+          BASE=https://ports.ubuntu.com/ubuntu-ports/pool/main/b/busybox
+          F=busybox-static_1.30.1-4ubuntu6_arm64.deb
+          curl -sSLf -o /tmp/bb.deb "$BASE/$F" || \
+            curl -sSLf -o /tmp/bb.deb "http://ports.ubuntu.com/ubuntu-ports/pool/main/b/busybox/$F"
+          ls -l /tmp/bb.deb
           rm -rf /tmp/bb && mkdir -p /tmp/bb
           dpkg-deb -x /tmp/bb.deb /tmp/bb
           ls -l /tmp/bb/bin/busybox
-          readelf -h /tmp/bb/bin/busybox | grep -E 'Machine|Type'
+          readelf -h /tmp/bb/bin/busybox | grep -E 'Class|Machine'
           readelf -h /tmp/bb/bin/busybox | grep -q AArch64 || { echo "不是 aarch64！"; exit 1; }
 
       - name: Build initramfs (overlay root)
