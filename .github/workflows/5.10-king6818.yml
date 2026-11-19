@@ -158,6 +158,21 @@ jobs:
           ./scripts/config --enable CONFIG_VETH
           ./scripts/config --enable CONFIG_BRIDGE_NETFILTER
 
+          # --- 容器运行必需：crun 用 cgroup v2 的 BPF 设备控制器 ---
+          # 缺 CONFIG_BPF_SYSCALL 时 bpf() 直接 ENOSYS，podman 起容器报：
+          #   crun: bpf create ``: Function not implemented: OCI runtime error
+          ./scripts/config --enable CONFIG_BPF
+          ./scripts/config --enable CONFIG_BPF_SYSCALL
+          ./scripts/config --enable CONFIG_BPF_JIT
+          ./scripts/config --enable CONFIG_CGROUP_BPF
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_IPVS
+          # overlay 网络（docker/podman 跨主机、k8s）
+          ./scripts/config --enable CONFIG_VXLAN
+          ./scripts/config --enable CONFIG_IPVLAN
+          # sysfs GPIO：留着让 usb-hub-reset 这类老脚本还能用（GPIO40 供电）
+          ./scripts/config --enable CONFIG_GPIO_SYSFS
+          ./scripts/config --enable CONFIG_MAGIC_SYSRQ
+
           # 网络队列调优（旁路由：解决短视频/大流量挤占）
           ./scripts/config --enable CONFIG_NET_SCH_FQ
           ./scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
@@ -183,6 +198,8 @@ jobs:
                    CONFIG_STMMAC_ETH CONFIG_DWMAC_NEXELL CONFIG_FIXED_PHY \
                    CONFIG_NF_TABLES CONFIG_NFT_NAT CONFIG_NFT_MASQ \
                    CONFIG_NF_CONNTRACK CONFIG_NET_SCH_FQ CONFIG_NET_SCH_HTB \
+                   CONFIG_BPF_SYSCALL CONFIG_CGROUP_BPF CONFIG_VXLAN \
+                   CONFIG_GPIO_SYSFS \
                    CONFIG_ZRAM CONFIG_CRYPTO_LZ4; do
             grep -E "^$s=|^# $s is not set" .config || echo "MISSING $s"
           done
