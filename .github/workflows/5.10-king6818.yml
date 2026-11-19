@@ -91,7 +91,7 @@ jobs:
           # dmesg/date/tr/ls/sync 是 2026-11-20 加的：init 现在会把启动进度
           # 和 dmesg 落到启动分区 /logs/510-boot.log，挂死时才查得到现场
           for a in sh mount umount mkdir sleep switch_root cat echo test \
-                   dmesg date tr ls sync; do
+                   dmesg date tr ls sync grep; do
             ln -sf busybox "$IR/bin/$a"
           done
           ln -sf ../bin/busybox "$IR/init.busybox"   # 备用：绝对路径调用
