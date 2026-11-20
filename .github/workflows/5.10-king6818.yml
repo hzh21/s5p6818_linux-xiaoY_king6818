@@ -176,6 +176,19 @@ jobs:
           ./scripts/config --enable CONFIG_GPIO_SYSFS
           ./scripts/config --enable CONFIG_MAGIC_SYSRQ
 
+          # --- IPv6 必须编进内核，不能留成模块 ---
+          # 留成 =m 时 systemd 到 5.9s 才 modprobe ipv6，那时 eth0 已经注册；
+          # inet6 初始化注册 netdev notifier 会把 NETDEV_* 事件回放给已存在的
+          # 设备，ndisc_send_unsol_na() 拿到未初始化的 inet6_dev 指针就直接
+          # oops（实测 2026-11-20 串口）：
+          #   pc : ndisc_send_unsol_na+0x90/0x210 [ipv6]
+          #   ndisc_netdev_event -> call_netdevice_register_net_notifiers
+          #   -> ndisc_late_init -> inet6_init -> do_init_module
+          #   Kernel panic - not syncing: Oops: Fatal exception in interrupt
+          # 改成 =y 后 inet6_init 在开机早期、还没有任何网卡时执行，这条路径
+          # 根本不会出现；顺带省掉一次 modprobe。
+          ./scripts/config --enable CONFIG_IPV6
+
           # 网络队列调优（旁路由：解决短视频/大流量挤占）
           ./scripts/config --enable CONFIG_NET_SCH_FQ
           ./scripts/config --enable CONFIG_NET_SCH_FQ_CODEL
@@ -202,7 +215,7 @@ jobs:
                    CONFIG_NF_TABLES CONFIG_NFT_NAT CONFIG_NFT_MASQ \
                    CONFIG_NF_CONNTRACK CONFIG_NET_SCH_FQ CONFIG_NET_SCH_HTB \
                    CONFIG_BPF_SYSCALL CONFIG_CGROUP_BPF CONFIG_VXLAN \
-                   CONFIG_GPIO_SYSFS \
+                   CONFIG_GPIO_SYSFS CONFIG_IPV6 \
                    CONFIG_ZRAM CONFIG_CRYPTO_LZ4; do
             grep -E "^$s=|^# $s is not set" .config || echo "MISSING $s"
           done

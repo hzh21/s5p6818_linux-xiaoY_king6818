@@ -24,28 +24,17 @@
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 BOOTMNT=/bootmnt
-LOG=$BOOTMNT/logs/510-boot.log
+LOG=/dev/null
+BOOTDISK=""
 
 mkdir -p "$BOOTMNT" /lower /upper /newroot
 
-# 启动分区只是"记事本"：哪个 mmcblk 的 p1 能挂上就用哪个
-BOOTDISK=""
-for d in mmcblk0 mmcblk1 mmcblk2; do
-    if [ -b /dev/${d}p1 ] && mount -t ext4 -o rw /dev/${d}p1 "$BOOTMNT" 2>/dev/null; then
-        if [ -d "$BOOTMNT/lost+found" ] || [ -f "$BOOTMNT/Image" ]; then
-            BOOTDISK=$d
-            break
-        fi
-        umount "$BOOTMNT"
-    fi
-done
-
-if [ -n "$BOOTDISK" ]; then
-    mkdir -p "$BOOTMNT/logs"
-    : >"$LOG" 2>/dev/null
-else
-    LOG=/dev/null
-fi
+# 注意顺序：必须先有 devtmpfs，/dev/mmcblkXp1 这些设备节点才存在。
+# 2026-11-20 之前的版本先挂 p1、后挂 devtmpfs，结果所有 -b /dev/mmcblkXp1
+# 判断都失败，LOG 静默降级成 /dev/null，日志文件从来没被写出来过。
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mount -t proc     proc     /proc 2>/dev/null
+mount -t sysfs    sysfs    /sys  2>/dev/null
 
 say() {
     echo "[initramfs] $*"
@@ -64,14 +53,36 @@ die() {
     exec /bin/sh
 }
 
+# 启动分区只是"记事本"：哪个 mmcblk 的 p1 能挂上就用哪个。
+# 先找带 /Image 的（真·启动分区，4.14 也挂着它，写这里两边都读得到），
+# 再退一步接受任意 ext4 的 p1。
+pick_boot() {
+    _need=$1
+    for d in mmcblk2 mmcblk1 mmcblk0; do
+        [ -b /dev/${d}p1 ] || continue
+        mount -t ext4 -o rw /dev/${d}p1 "$BOOTMNT" 2>/dev/null || continue
+        if [ "$_need" = image ]; then
+            if [ -f "$BOOTMNT/Image" ]; then BOOTDISK=$d; return 0; fi
+        else
+            if [ -d "$BOOTMNT/lost+found" ] || [ -f "$BOOTMNT/Image" ]; then BOOTDISK=$d; return 0; fi
+        fi
+        umount "$BOOTMNT"
+    done
+    return 1
+}
+
+pick_boot image || pick_boot any || BOOTDISK=""
+
+if [ -n "$BOOTDISK" ]; then
+    mkdir -p "$BOOTMNT/logs" 2>/dev/null
+    if : >"$BOOTMNT/logs/510-boot.log" 2>/dev/null; then
+        LOG=$BOOTMNT/logs/510-boot.log
+    fi
+fi
+
 say "=== king6818 5.10 overlay init $(date '+%F %T') ==="
 say "cmdline: $(cat /proc/cmdline)"
-say "stage: init start; boot log device = ${BOOTDISK:-none}"
-
-mount -t devtmpfs devtmpfs /dev 2>/dev/null
-mount -t proc     proc     /proc 2>/dev/null
-mount -t sysfs    sysfs    /sys  2>/dev/null
-say "stage: pseudo fs mounted"
+say "stage: init start; boot log device = ${BOOTDISK:-none} log = $LOG"
 
 # 等 mmc 块设备出现（dwmmc 探测约 3s）。
 # 用整数 sleep：busybox 的小数 sleep 依赖 FEATURE_FLOAT_SLEEP，不一定编译进来。
