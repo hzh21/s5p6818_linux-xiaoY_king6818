@@ -149,6 +149,15 @@ static inline void __flush_tlb_range(struct vm_area_struct *vma,
 {
 #ifdef CONFIG_ARM64_WORKAROUND_CCI400_DVMV7
 	flush_tlb_mm(vma->vm_mm);
+#elif defined (CONFIG_SMP) && defined (CONFIG_ARCH_S5P6818)
+	/*
+	 * Same root cause as the FIXME in flush_tlb_mm() above: on S5P6818
+	 * the TLBI-by-VA (vale1is/vae1is) does not complete reliably across
+	 * CPU clusters, especially the last-level-only form used by
+	 * mprotect(). Fall back to a full flush so range invalidation is
+	 * never silently dropped.
+	 */
+	flush_tlb_mm(vma->vm_mm);
 #else
 	unsigned long asid = ASID(vma->vm_mm) << 48;
 	unsigned long addr;
