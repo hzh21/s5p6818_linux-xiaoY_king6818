@@ -234,6 +234,13 @@ jobs:
           ./scripts/config --enable CONFIG_BOOTPARAM_HUNG_TASK_PANIC
           ./scripts/config --set-val CONFIG_DEFAULT_HUNG_TASK_TIMEOUT 30
 
+          # --- PSI：/proc/pressure/{io,cpu,memory} ---
+          # 2026-11-20 21:45 现场诊断时发现本内核没有 CONFIG_PSI，导致
+          # "到底是 CPU 忙还是 I/O 堵"这类问题只能靠 D 状态和 loadavg 猜。
+          # PSI 开销极小（每次调度 tick 累加），却能一句话给出 io full avg10。
+          ./scripts/config --enable CONFIG_PSI
+          ./scripts/config --set-val CONFIG_PSI_DEFAULT_DISABLED n
+
           make olddefconfig
           echo '--- 关键配置核对 ---'
           for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_LOCALVERSION \
@@ -244,7 +251,7 @@ jobs:
                    CONFIG_GPIO_SYSFS CONFIG_IPV6 \
                    CONFIG_ZRAM CONFIG_CRYPTO_LZ4 \
                    CONFIG_HUNG_TASK CONFIG_BOOTPARAM_HUNG_TASK_PANIC \
-                   CONFIG_RTL8XXXU; do
+                   CONFIG_PSI CONFIG_RTL8XXXU; do
             grep -E "^$s=|^# $s is not set" .config || echo "MISSING $s"
           done
           grep -E "^#? ?CONFIG_DEBUG_INFO|^CONFIG_DEBUG_INFO" .config || true
@@ -256,8 +263,18 @@ jobs:
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           set -e
+          # --- 不再用 -O3 编内核（2026-11-20 移除）---
+          # 原来这里带 KCFLAGS="-O3 ... -Wno-array-bounds -Wno-format-overflow"。
+          # 内核只支持 -O2/-Os，-O3 会把大量依赖特定求值顺序/别名的内核代码
+          # （mm、锁、per-cpu、内联汇编宏）做激进变换；当初加那两个 -Wno-*
+          # 正是因为 -O3 报了一堆告警，属于"把仪表盘灯拧掉"。
+          # 症状高度吻合：用户态两个互不相干的运行时（podman 的 Go、node 的 V8）
+          # 在做对象/堆分配时随机崩溃（Go 报 marked free object in span，
+          # V8 报 Check failed / SIGSEGV），而纯数值循环不崩——
+          # 这是内核侧内存管理被误编译的典型表现，不是应用 bug。
+          # -march=armv8-a+crc / -mtune=cortex-a53 保留（A53 有 crc32，安全）。
           make -j$(nproc) \
-               KCFLAGS="-O3 -march=armv8-a+crc -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
+               KCFLAGS="-march=armv8-a+crc -mtune=cortex-a53" \
                Image dtbs
           ls -lh arch/arm64/boot/Image
           ls -lh arch/arm64/boot/dts/nexell/s5p6818-king6818.dtb
@@ -277,7 +294,7 @@ jobs:
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           make -j$(nproc) \
-               KCFLAGS="-O3 -march=armv8-a+crc -mtune=cortex-a53 -Wno-array-bounds -Wno-format-overflow" \
+               KCFLAGS="-march=armv8-a+crc -mtune=cortex-a53" \
                modules
           make INSTALL_MOD_PATH="$PWD/modout" INSTALL_MOD_STRIP=1 modules_install
           echo '--- 无线模块体积（应为百 KB 级）---'
