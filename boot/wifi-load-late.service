@@ -1,0 +1,22 @@
+[Unit]
+Description=Late-load RTL8723BU WiFi (avoid boot-time race)
+# 不挂 After=network-online.target：那会把自己排到开机关键路径上，
+# 本服务就是要"等这么久"，用 oneshot + 内部 sleep 自己控时。
+After=multi-user.target
+ConditionKernelVersion=>=5
+ConditionPathExists=/usr/lib/modules/5.10.252-s5p6818
+
+[Service]
+# 必须用 simple/exec 而不是 oneshot：oneshot 运行期间处于 activating，
+# 会把 systemd 的 is-system-running 永远卡在 starting（实测），
+# 等于给整机挂了一个"永远没启动完"的状态。
+Type=simple
+ExecStart=/usr/local/sbin/wifi-load-late.sh
+TimeoutStartSec=900
+# 千万不要 Restart：崩一次就够折腾了，失败就失败
+RemainAfterExit=yes
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

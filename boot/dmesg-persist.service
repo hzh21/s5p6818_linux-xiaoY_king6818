@@ -1,0 +1,17 @@
+[Unit]
+Description=dmesg realtime persist to boot partition (crash forensics)
+DefaultDependencies=no
+After=local-fs.target
+Before=shutdown.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/dmesg-persist.sh
+Restart=always
+RestartSec=3
+# 不要因为 OOM / CPU 压力被杀掉——取证服务必须活到最后
+OOMScoreAdjust=-900
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
