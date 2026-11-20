@@ -208,6 +208,15 @@ jobs:
           ./scripts/config --enable CONFIG_CRYPTO_LZ4
           ./scripts/config --enable CONFIG_CRYPTO_LZ4HC
 
+          # --- 板载 USB 无线网卡 RTL8723BU (0bda:b720) ---
+          # 4.4 内核带 Realtek 官方 8723bu.ko，能用；4.14 与 5.10 都没编，
+          # 所以 usb 2-1.2 的三个接口一直是 Driver=[none]、没有 wlan0。
+          # mainline 只有 rtl8xxxu 认这颗芯片，而 8723bu 属于 untested 列表，
+          # 不开 UNTESTED 时 USB ID 不会注册。固件已随 linux-firmware 就位：
+          #   /lib/firmware/rtlwifi/rtl8723bu_nic.bin
+          ./scripts/config --module CONFIG_RTL8XXXU
+          ./scripts/config --enable CONFIG_RTL8XXXU_UNTESTED
+
           make olddefconfig
           echo '--- 关键配置核对 ---'
           for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_LOCALVERSION \
@@ -216,7 +225,8 @@ jobs:
                    CONFIG_NF_CONNTRACK CONFIG_NET_SCH_FQ CONFIG_NET_SCH_HTB \
                    CONFIG_BPF_SYSCALL CONFIG_CGROUP_BPF CONFIG_VXLAN \
                    CONFIG_GPIO_SYSFS CONFIG_IPV6 \
-                   CONFIG_ZRAM CONFIG_CRYPTO_LZ4; do
+                   CONFIG_ZRAM CONFIG_CRYPTO_LZ4 \
+                   CONFIG_RTL8XXXU; do
             grep -E "^$s=|^# $s is not set" .config || echo "MISSING $s"
           done
 
