@@ -113,6 +113,66 @@ if ! grep -q "CONFIG_DWMAC_NEXELL" "$S/Makefile"; then
 	mv /tmp/mk.new "$S/Makefile"
 fi
 
+# 补丁 6：S5P6818 上 TLBI by VA 跨 CPU cluster 不可靠
+#
+#   flush_tlb_mm() 里厂商早就留了 workaround（CONFIG_SMP &&
+#   CONFIG_ARCH_S5P6818 时直接 flush_tlb_all()），但 __flush_tlb_range()
+#   是上游原版，仍然逐页发 vae1is/vale1is。
+#
+#   实测（Cortex-A53 r0p3 / 8 核）：mprotect(PROT_READ) 返回后再过 20ms，
+#   其他核写同一页仍然成功——5.10 失效率 89%，4.14 只有 0.06%
+#   （4.14 开了 KPTI，每次 trap 都切 TTBR0，把同一缺陷掩盖了）。
+#   页数达到 MAX_TLBI_OPS(512) 时走 flush_tlb_mm，失效率立刻归零，
+#   精确坐实是"范围失效路径没生效"。
+#
+#   glibc 的堆保护、V8 的 JIT W^X 全都依赖 mprotect 语义，失效即表现为
+#   随机 SIGSEGV 与 heap corruption。这里让范围失效一律委托 flush_tlb_mm()。
+#
+#   注：CI 的 ubuntu:20.04 容器没有 python3，这里只用 awk 做整函数替换。
+TLB="$K/arch/arm64/include/asm/tlbflush.h"
+if ! grep -q 'king6818: route range invalidation' "$TLB"; then
+	cat > /tmp/tlb_new_fn.txt <<'TLBEOF'
+static inline void __flush_tlb_range(struct vm_area_struct *vma,
+				     unsigned long start, unsigned long end,
+				     unsigned long stride, bool last_level,
+				     int tlb_level)
+{
+	/*
+	 * king6818: route range invalidation through flush_tlb_mm().
+	 * On S5P6818 a TLBI by VA does not reliably invalidate the entries
+	 * held by other CPU clusters, so mprotect()/munmap() left writable
+	 * mappings behind and user space kept writing to read-only pages.
+	 * flush_tlb_mm() already downgrades to a full flush on this SoC.
+	 */
+	(void)start;
+	(void)end;
+	(void)stride;
+	(void)last_level;
+	(void)tlb_level;
+	flush_tlb_mm(vma->vm_mm);
+}
+TLBEOF
+	awk 'NR == FNR { fn = fn $0 "\n"; next }
+	     /^static inline void __flush_tlb_range\(/ { printf "%s", fn; skip = 1; next }
+	     skip && /^}$/ { skip = 0; next }
+	     skip { next }
+	     { print }' /tmp/tlb_new_fn.txt "$TLB" > /tmp/tlb_h.new
+	if [ "$(grep -c 'king6818: route range invalidation' /tmp/tlb_h.new)" != "1" ]; then
+		echo "FATAL: tlbflush patch not applied" >&2
+		exit 1
+	fi
+	if [ "$(grep -c '^static inline void __flush_tlb_range(' /tmp/tlb_h.new)" != "1" ]; then
+		echo "FATAL: __flush_tlb_range duplication" >&2
+		exit 1
+	fi
+	mv /tmp/tlb_h.new "$TLB"
+fi
+if grep -q 'MAX_TLBI_RANGE_PAGES' "$TLB"; then
+	echo "NOTE: MAX_TLBI_RANGE_PAGES still referenced outside range fn (ok)" >&2
+fi
+echo '--- tlbflush 补丁核对 ---'
+sed -n '/^static inline void __flush_tlb_range/,/^}$/p' "$TLB"
+
 echo '--- dtb Makefile ---'
 cat "$D/Makefile"
 echo '--- dts 补丁核对（gmac0 最终形态：应有 phy-handle / snps,dwmac-mdio，不应有 fixed-link）---'
