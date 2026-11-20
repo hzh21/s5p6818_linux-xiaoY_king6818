@@ -110,13 +110,16 @@ static inline void flush_tlb_mm(struct mm_struct *mm)
 	 * clusters. This issue must be resolved in BL1~BL3 layer not here.
 	 * This patch will be removed afterwards.
 	 */
-	/*
-	 * S5P6818: TLBI by VA/ASID does not reliably complete across CPU
-	 * clusters (see FIXME above), so always fall back to a full flush.
-	 * The original guard used CONFIG_ARCH_S5P6818, which is not visible
-	 * in this header's translation units, so it never compiled in.
-	 */
+#if defined (CONFIG_SMP) && defined (CONFIG_ARCH_S5P6818)
 	flush_tlb_all();
+#else
+	unsigned long asid = ASID(mm) << 48;
+
+	dsb(ishst);
+	__tlbi(aside1is, asid);
+	__tlbi_user(aside1is, asid);
+	dsb(ish);
+#endif
 }
 
 static inline void flush_tlb_page(struct vm_area_struct *vma,
@@ -144,16 +147,32 @@ static inline void __flush_tlb_range(struct vm_area_struct *vma,
 				     unsigned long start, unsigned long end,
 				     bool last_level)
 {
-	/*
-	 * Range invalidation (mprotect / munmap / COW) previously issued
-	 * vale1is only, which on S5P6818 silently leaves stale writable
-	 * entries in other cores' TLBs.  Delegate to flush_tlb_mm() so the
-	 * same full-flush workaround applies here too.
-	 */
+#ifdef CONFIG_ARM64_WORKAROUND_CCI400_DVMV7
 	flush_tlb_mm(vma->vm_mm);
-	(void)start;
-	(void)end;
-	(void)last_level;
+#else
+	unsigned long asid = ASID(vma->vm_mm) << 48;
+	unsigned long addr;
+
+	if ((end - start) > MAX_TLB_RANGE) {
+		flush_tlb_mm(vma->vm_mm);
+		return;
+	}
+
+	start = asid | (start >> 12);
+	end = asid | (end >> 12);
+
+	dsb(ishst);
+	for (addr = start; addr < end; addr += 1 << (PAGE_SHIFT - 12)) {
+		if (last_level) {
+			__tlbi(vale1is, addr);
+			__tlbi_user(vale1is, addr);
+		} else {
+			__tlbi(vae1is, addr);
+			__tlbi_user(vae1is, addr);
+		}
+	}
+	dsb(ish);
+#endif
 }
 
 static inline void flush_tlb_range(struct vm_area_struct *vma,
