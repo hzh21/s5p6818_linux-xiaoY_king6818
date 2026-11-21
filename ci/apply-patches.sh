@@ -130,6 +130,77 @@ fi
 #   现在改成在 CI 的 Configure 步骤里直接打开该配置项（见
 #   .github/workflows/5.10-king6818.yml），厂商代码零改动、覆盖面完整。
 #   这里只做核对：那几处 #ifdef 必须还在，上游改了就报错退出。
+
+# 补丁 7：把 ARM64_WORKAROUND_CCI400_DVMV7 从 PA 位宽的 choice 里挪出来。
+#
+#   厂商把这一项写进了 "Physical address space size" 那个 choice 内部：
+#       choice
+#           prompt "Physical address space size"
+#           default ARM64_PA_BITS_48
+#       config ARM64_WORKAROUND_CCI400_DVMV7     <-- 成了 choice 的成员
+#       config ARM64_PA_BITS_48
+#       ...
+#       endchoice
+#
+#   choice 的语义是"这一组里只能选一个"，所以 `scripts/config --enable` 会把它
+#   和 PA_BITS_48 同时置 y，形成非法状态；紧接着 `make olddefconfig` 按 choice
+#   的 default 又把它丢回 n。实测 run 44858681648 的日志正是如此：
+#       ./scripts/config --enable CONFIG_ARM64_WORKAROUND_CCI400_DVMV7
+#       ...
+#       # CONFIG_ARM64_WORKAROUND_CCI400_DVMV7 is not set
+#
+#   这也解释了为什么这个 workaround 从 4.14 一路到 5.10 都没人启用过 ——
+#   在 menuconfig 里根本选不上，7 处 #ifdef 等于永远走不进 else 分支。
+#
+#   做法：整段搬到 choice 之前，变成独立的 bool。PA 位宽那个 choice 只剩
+#   PA_BITS_48，行为和原来完全一致。
+KC="$K/arch/arm64/Kconfig"
+CCIBLK=/tmp/cciblk.txt
+awk '
+	/^config ARM64_WORKAROUND_CCI400_DVMV7$/ { grab = 1 }
+	grab && /^config / && $0 != "config ARM64_WORKAROUND_CCI400_DVMV7" { exit }
+	grab { print }
+' "$KC" > "$CCIBLK"
+if [ "$(wc -l < "$CCIBLK")" -lt 8 ] || ! grep -q 'depends on SMP' "$CCIBLK"; then
+	echo "FATAL: 抠 ARM64_WORKAROUND_CCI400_DVMV7 段落失败" >&2
+	exit 1
+fi
+# 先从 choice 里删掉
+awk '
+	/^config ARM64_WORKAROUND_CCI400_DVMV7$/ { skip = 1; next }
+	skip && /^config / { skip = 0 }
+	skip { next }
+	{ print }
+' "$KC" > /tmp/kconfig.nb
+# 再插到 PA 位宽 choice 之前（整个文件读进内存，按两行上下文定位）
+if ! awk -v blk="$CCIBLK" '
+	BEGIN { while ((getline l < blk) > 0) b = b l "\n"; close(blk) }
+	{ lines[NR] = $0 }
+	END {
+		for (i = 1; i <= NR; i++) {
+			if (!done && lines[i] == "choice" &&
+			    lines[i + 1] ~ /prompt "Physical address space size"/) {
+				printf "%s", b
+				done = 1
+			}
+			print lines[i]
+		}
+		if (!done) exit 2
+	}
+' /tmp/kconfig.nb > /tmp/kconfig.new; then
+	echo "FATAL: 找不到 PA 位宽 choice 的插入点" >&2
+	exit 1
+fi
+mv /tmp/kconfig.new "$KC"
+# 复核：workaround 的 config 行必须出现在 PA 位宽 prompt 之前
+L1=$(grep -n '^config ARM64_WORKAROUND_CCI400_DVMV7$' "$KC" | cut -d: -f1)
+L2=$(grep -n 'prompt "Physical address space size"' "$KC" | cut -d: -f1)
+if [ -z "$L1" ] || [ -z "$L2" ] || [ "$L1" -ge "$L2" ]; then
+	echo "FATAL: ARM64_WORKAROUND_CCI400_DVMV7 仍在 PA 位宽 choice 内 ($L1 vs $L2)" >&2
+	exit 1
+fi
+echo "--- Kconfig 补丁核对：workaround 行 $L1 < PA choice 行 $L2 ---"
+
 TLB="$K/arch/arm64/include/asm/tlbflush.h"
 CTX="$K/arch/arm64/mm/context.c"
 n_tlb=$(grep -c 'CONFIG_ARM64_WORKAROUND_CCI400_DVMV7' "$TLB" || true)
