@@ -113,65 +113,40 @@ if ! grep -q "CONFIG_DWMAC_NEXELL" "$S/Makefile"; then
 	mv /tmp/mk.new "$S/Makefile"
 fi
 
-# 补丁 6：S5P6818 上 TLBI by VA 跨 CPU cluster 不可靠
+# 补丁 6（2026-11-21 移除，改为开关）：TLB 失效不再靠改 tlbflush.h。
 #
-#   flush_tlb_mm() 里厂商早就留了 workaround（CONFIG_SMP &&
-#   CONFIG_ARCH_S5P6818 时直接 flush_tlb_all()），但 __flush_tlb_range()
-#   是上游原版，仍然逐页发 vae1is/vale1is。
+#   原来这里用 awk 把 __flush_tlb_range() 整个换成了 flush_tlb_mm()，只堵住
+#   "按范围失效"一条路。真正的原因是这颗 SoC 的 CCI400 只支持 DVMv7 协议
+#   （仅 ARMv7），ARMv8 的 TLBI ...IS 是 inner-shareable 广播，跨 cluster
+#   传递要靠 DVM 消息，DVMv7 送不对。AMBA AXI/ACE C12.4/12.6 的两条硬约束：
+#     1) ASID 高 8 位必须为 0，否则消息被静默丢弃
+#     2) "TLB Invalidation by address range" 整类不可靠
+#   厂商在 5.10 里其实把 workaround 全写好了（tlbflush.h 4 处 +
+#   context.c 3 处），由 CONFIG_ARM64_WORKAROUND_CCI400_DVMV7 统一开关，
+#   但它默认是关的 —— 等于只留了 flush_tlb_mm 一处，flush_tlb_page /
+#   __flush_tlb_range / flush_tlb_kernel_range / __flush_tlb_kernel_pgtable
+#   四条路全是裸的 vale1is/vaale1is。
 #
-#   实测（Cortex-A53 r0p3 / 8 核）：mprotect(PROT_READ) 返回后再过 20ms，
-#   其他核写同一页仍然成功——5.10 失效率 89%，4.14 只有 0.06%
-#   （4.14 开了 KPTI，每次 trap 都切 TTBR0，把同一缺陷掩盖了）。
-#   页数达到 MAX_TLBI_OPS(512) 时走 flush_tlb_mm，失效率立刻归零，
-#   精确坐实是"范围失效路径没生效"。
-#
-#   glibc 的堆保护、V8 的 JIT W^X 全都依赖 mprotect 语义，失效即表现为
-#   随机 SIGSEGV 与 heap corruption。这里让范围失效一律委托 flush_tlb_mm()。
-#
-#   注：CI 的 ubuntu:20.04 容器没有 python3，这里只用 awk 做整函数替换。
+#   现在改成在 CI 的 Configure 步骤里直接打开该配置项（见
+#   .github/workflows/5.10-king6818.yml），厂商代码零改动、覆盖面完整。
+#   这里只做核对：那几处 #ifdef 必须还在，上游改了就报错退出。
 TLB="$K/arch/arm64/include/asm/tlbflush.h"
-if ! grep -q 'king6818: route range invalidation' "$TLB"; then
-	cat > /tmp/tlb_new_fn.txt <<'TLBEOF'
-static inline void __flush_tlb_range(struct vm_area_struct *vma,
-				     unsigned long start, unsigned long end,
-				     unsigned long stride, bool last_level,
-				     int tlb_level)
-{
-	/*
-	 * king6818: route range invalidation through flush_tlb_mm().
-	 * On S5P6818 a TLBI by VA does not reliably invalidate the entries
-	 * held by other CPU clusters, so mprotect()/munmap() left writable
-	 * mappings behind and user space kept writing to read-only pages.
-	 * flush_tlb_mm() already downgrades to a full flush on this SoC.
-	 */
-	(void)start;
-	(void)end;
-	(void)stride;
-	(void)last_level;
-	(void)tlb_level;
-	flush_tlb_mm(vma->vm_mm);
-}
-TLBEOF
-	awk 'NR == FNR { fn = fn $0 "\n"; next }
-	     /^static inline void __flush_tlb_range\(/ { printf "%s", fn; skip = 1; next }
-	     skip && /^}$/ { skip = 0; next }
-	     skip { next }
-	     { print }' /tmp/tlb_new_fn.txt "$TLB" > /tmp/tlb_h.new
-	if [ "$(grep -c 'king6818: route range invalidation' /tmp/tlb_h.new)" != "1" ]; then
-		echo "FATAL: tlbflush patch not applied" >&2
-		exit 1
-	fi
-	if [ "$(grep -c '^static inline void __flush_tlb_range(' /tmp/tlb_h.new)" != "1" ]; then
-		echo "FATAL: __flush_tlb_range duplication" >&2
-		exit 1
-	fi
-	mv /tmp/tlb_h.new "$TLB"
+CTX="$K/arch/arm64/mm/context.c"
+n_tlb=$(grep -c 'CONFIG_ARM64_WORKAROUND_CCI400_DVMV7' "$TLB" || true)
+if [ "$n_tlb" != "4" ]; then
+	echo "FATAL: tlbflush.h 里 CCI400 workaround 有 $n_tlb 处，应为 4" >&2
+	exit 1
 fi
-if grep -q 'MAX_TLBI_RANGE_PAGES' "$TLB"; then
-	echo "NOTE: MAX_TLBI_RANGE_PAGES still referenced outside range fn (ok)" >&2
+if [ "$(grep -c 'CONFIG_ARM64_WORKAROUND_CCI400_DVMV7' "$CTX" || true)" != "3" ]; then
+	echo "FATAL: context.c 里 CCI400 workaround 不是 3 处" >&2
+	exit 1
 fi
-echo '--- tlbflush 补丁核对 ---'
-sed -n '/^static inline void __flush_tlb_range/,/^}$/p' "$TLB"
+if ! grep -q '^config ARM64_WORKAROUND_CCI400_DVMV7' "$K/arch/arm64/Kconfig"; then
+	echo "FATAL: Kconfig 里没有 ARM64_WORKAROUND_CCI400_DVMV7" >&2
+	exit 1
+fi
+echo '--- TLB workaround 核对（靠配置项驱动，本脚本不再改内核代码）---'
+grep -n 'CONFIG_ARM64_WORKAROUND_CCI400_DVMV7' "$TLB" "$CTX"
 
 echo '--- dtb Makefile ---'
 cat "$D/Makefile"
