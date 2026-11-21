@@ -263,6 +263,19 @@ jobs:
           ./scripts/config --enable CONFIG_ARM64_WORKAROUND_CCI400_DVMV7
 
           make olddefconfig
+
+          # 硬性断言：这个开关必须真的进 .config。
+          # 上一版（e6360227）就栽在这：Configure 绿了，但 olddefconfig 又把它
+          # 丢回 n（原因见 apply-patches.sh 补丁 7：它原本是 PA 位宽 choice 的
+          # 成员）。白烧一次 21 分钟构建才发现。这里直接失败，2 分钟出结论。
+          if ! grep -q '^CONFIG_ARM64_WORKAROUND_CCI400_DVMV7=y' .config; then
+            echo 'FATAL: CONFIG_ARM64_WORKAROUND_CCI400_DVMV7 没进 .config' >&2
+            grep -n 'ARM64_WORKAROUND_CCI400_DVMV7\|Physical address space size' \
+              .config arch/arm64/Kconfig | head -20 || true
+            exit 1
+          fi
+          echo 'CONFIG_ARM64_WORKAROUND_CCI400_DVMV7=y OK'
+
           echo '--- 关键配置核对 ---'
           for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_LOCALVERSION \
                    CONFIG_STMMAC_ETH CONFIG_DWMAC_NEXELL CONFIG_FIXED_PHY \
