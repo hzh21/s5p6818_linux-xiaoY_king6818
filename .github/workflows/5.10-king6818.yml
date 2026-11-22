@@ -272,6 +272,15 @@ jobs:
           ./scripts/config --enable CONFIG_NF_CONNTRACK_PROCFS
 
           # --- I. QoS：入向限速需要 IFB，CAKE 是旁路由限速首选 ---
+          # 依赖链必须先满足，否则 IFB 会被 Kconfig 直接丢掉（run #40 栽在这）：
+          #   NET_SCHED -> NET_CLS_ACT -> NET_ACT_MIRRED -> IFB
+          # drivers/net/Kconfig: config IFB / depends on NET_ACT_MIRRED || NFT_FWD_NETDEV
+          ./scripts/config --enable CONFIG_NET_SCHED
+          ./scripts/config --enable CONFIG_NET_CLS_ACT
+          ./scripts/config --enable CONFIG_NET_ACT_GACT
+          ./scripts/config --enable CONFIG_NET_ACT_MIRRED
+          # flower 分类器：按五元组/端口分流到不同 qdisc，旁边常与 mirred 搭配做镜像
+          ./scripts/config --enable CONFIG_NET_CLS_FLOWER
           ./scripts/config --enable CONFIG_IFB
           ./scripts/config --enable CONFIG_NET_SCH_CAKE
           ./scripts/config --enable CONFIG_NET_SCH_INGRESS
@@ -442,6 +451,7 @@ jobs:
             NETFILTER_XT_TARGET_CLASSIFY NETFILTER_XT_TARGET_DSCP \
             NETFILTER_XT_MATCH_DSCP NETFILTER_XT_TARGET_LOG \
             NF_CONNTRACK_LABELS NF_CONNTRACK_TIMEOUT NF_CONNTRACK_PROCFS \
+            NET_SCHED NET_CLS_ACT NET_ACT_GACT NET_ACT_MIRRED NET_CLS_FLOWER \
             IFB NET_SCH_CAKE NET_SCH_INGRESS NET_ACT_POLICE \
             IP6_NF_IPTABLES IP6_NF_FILTER IP6_NF_MANGLE IP6_NF_NAT \
             IP6_NF_TARGET_MASQUERADE IP6_NF_TARGET_REJECT \
