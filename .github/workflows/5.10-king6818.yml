@@ -315,6 +315,57 @@ jobs:
           ./scripts/config --enable CONFIG_TCP_CONG_ADVANCED
           ./scripts/config --enable CONFIG_TCP_CONG_BBR
 
+          # --- L. 与 4.14 原厂内核对齐（4.14 有、5.10 缺，且对本机有用） ---
+          # 依据：从 /mnt/sd_boot/Image(4.14.137) 与 Image.510(5.10.252) 各自
+          # 内嵌的 .config 逐项比对，143 项缺口里筛出这些。板载实测佐证：
+          #   ip rule add fwmark 1 table 100  -> RTNETLINK answers: Operation not supported
+          #   nft ... counter log             -> No such file or directory
+          #
+          # 策略路由：旁路由按 fwmark/源地址分流的基础，4.14 有、5.10 缺
+          ./scripts/config --enable CONFIG_IP_ADVANCED_ROUTER
+          ./scripts/config --enable CONFIG_IP_MULTIPLE_TABLES
+          ./scripts/config --enable CONFIG_IPV6_MULTIPLE_TABLES
+          # nfnetlink：nft 的 log / queue 语句都靠它；缺了 log 直接报 ENOENT
+          ./scripts/config --enable CONFIG_NETFILTER_NETLINK_LOG
+          ./scripts/config --enable CONFIG_NETFILTER_NETLINK_QUEUE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_TARGET_NFQUEUE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_TARGET_REDIRECT
+          ./scripts/config --enable CONFIG_NETFILTER_XT_TARGET_IDLETIMER
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_QUOTA
+          # 按包类型/跳数分类，配 QoS 用
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_PKTTYPE
+          ./scripts/config --enable CONFIG_NETFILTER_XT_MATCH_HL
+          # nft 命名对象（命名 counter/quota，跨规则复用）
+          ./scripts/config --enable CONFIG_NFT_OBJREF
+          ./scripts/config --enable CONFIG_NF_TABLES_ARP
+          # NAT 穿越 helper：家庭网里 FTP/IP 摄像头/VoIP 常见
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_FTP
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_SIP
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_TFTP
+          ./scripts/config --enable CONFIG_NF_CONNTRACK_PPTP
+          # 容器：I/O 限速 + overlayfs 索引（改名/删除后上层一致性）
+          ./scripts/config --enable CONFIG_BLK_DEV_THROTTLING
+          ./scripts/config --enable CONFIG_OVERLAY_FS_INDEX
+          ./scripts/config --enable CONFIG_TMPFS_XATTR
+          ./scripts/config --enable CONFIG_TMPFS_POSIX_ACL
+          # 挂 NAS / ISO / U 盘 FAT：CIFS 在 4.14 是 =m，这里内建
+          ./scripts/config --enable CONFIG_CIFS
+          ./scripts/config --enable CONFIG_ISO9660_FS
+          ./scripts/config --enable CONFIG_MSDOS_FS
+          # ext4 security xattr：没有它 setcap/getcap 在 ext4 上失效
+          ./scripts/config --enable CONFIG_EXT4_FS_SECURITY
+          # qemu-user 跑异架构容器（arm/v7 镜像）靠它注册解释器
+          ./scripts/config --enable CONFIG_BINFMT_MISC
+          # ss -u / UDP socket 诊断
+          ./scripts/config --enable CONFIG_INET_UDP_DIAG
+          # 老密码学：PPTP(MPPE) / WEP / cryptsetup twofish 的互操作
+          ./scripts/config --enable CONFIG_CRYPTO_ARC4
+          ./scripts/config --enable CONFIG_CRYPTO_DES
+          ./scripts/config --enable CONFIG_CRYPTO_MD4
+          # LUKS 加密 U 盘/分区（存储全在 USB 上，留着备用）
+          ./scripts/config --enable CONFIG_DM_CRYPT
+          ./scripts/config --enable CONFIG_CRC_CCITT
+
           # --- 容器运行必需：crun 用 cgroup v2 的 BPF 设备控制器 ---
           # 缺 CONFIG_BPF_SYSCALL 时 bpf() 直接 ENOSYS，podman 起容器报：
           #   crun: bpf create ``: Function not implemented: OCI runtime error
@@ -500,6 +551,39 @@ jobs:
           done
           echo "TCP 拥塞控制 OK（advanced + BBR）"
           grep -E '^CONFIG_DEFAULT_TCP_CONG=' .config || true
+
+          # 与 4.14 对齐的补全项。同样逐条断言：缺一项即 FATAL，并打印 depends 行。
+          NF_414="IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES IPV6_MULTIPLE_TABLES \
+            NETFILTER_NETLINK_LOG NETFILTER_NETLINK_QUEUE \
+            NETFILTER_XT_TARGET_NFQUEUE NETFILTER_XT_TARGET_REDIRECT \
+            NETFILTER_XT_TARGET_IDLETIMER NETFILTER_XT_MATCH_QUOTA \
+            NETFILTER_XT_MATCH_PKTTYPE NETFILTER_XT_MATCH_HL \
+            NFT_OBJREF NF_TABLES_ARP \
+            NF_CONNTRACK_FTP NF_CONNTRACK_SIP NF_CONNTRACK_TFTP NF_CONNTRACK_PPTP \
+            BLK_DEV_THROTTLING OVERLAY_FS_INDEX \
+            TMPFS_XATTR TMPFS_POSIX_ACL \
+            CIFS ISO9660_FS MSDOS_FS EXT4_FS_SECURITY BINFMT_MISC \
+            INET_UDP_DIAG CRYPTO_ARC4 CRYPTO_DES CRYPTO_MD4 DM_CRYPT CRC_CCITT"
+          miss4=""
+          for s in $NF_414; do
+            grep -qE "^CONFIG_$s=y$" .config || miss4="$miss4 CONFIG_$s"
+          done
+          if [ -n "$miss4" ]; then
+            echo "FATAL: 以下 4.14 对齐项没进 .config（多半 depends 没满足）：" >&2
+            echo "$miss4" >&2
+            for s in $miss4; do
+              n=${s#CONFIG_}
+              echo "--- $n"
+              grep -rn -A7 -E "^(menuconfig|config) $n\$" \
+                net/netfilter/Kconfig net/ipv4/Kconfig net/ipv6/Kconfig \
+                net/ipv4/netfilter/Kconfig fs/Kconfig fs/overlayfs/Kconfig \
+                fs/ext4/Kconfig fs/isofs/Kconfig fs/fat/Kconfig \
+                block/Kconfig drivers/md/Kconfig mm/Kconfig mm/shmem.c 2>/dev/null \
+                | grep -E "bool|tristate|depends on|select" | head -6 || true
+            done
+            exit 1
+          fi
+          echo "4.14 对齐项 OK（$NF_414）"
 
           echo '--- 关键配置核对 ---'
           for s in CONFIG_HZ_1000 CONFIG_HZ CONFIG_LOCALVERSION \

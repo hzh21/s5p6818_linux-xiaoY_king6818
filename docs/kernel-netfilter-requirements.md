@@ -227,3 +227,58 @@ for s in CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR; do
   grep -qE "^$s=y$" .config || { echo "FATAL: $s 没进 .config" >&2; ... exit 1; }
 done
 ```
+
+## 十、与 4.14 原厂内核逐项比对（第二轮，32 项）
+
+方法：两个镜像都编入了 `CONFIG_IKCONFIG`，直接把内嵌 `.config` 抠出来比，
+不靠印象。工具 `tools/extract-ikconfig.py`（扫 `IKCFG_ST`/`IKCFG_ED` 标记解 gzip）
+与 `tools/cfg-gap.py`（把「5.10 里存在但为 n」和「5.10 已删除该符号」分开统计）。
+
+```
+Image      4.14.137  4733 行
+Image.510  5.10.252  7320 行
+4.14 已启用而旧 5.10 关闭：143 项
+本轮之前已补：29 项；本轮再补：32 项
+```
+
+### 板载实测（不是看配置猜的）
+
+```
+# ip rule add fwmark 0x1 table 100
+RTNETLINK answers: Operation not supported        <- IP_ADVANCED_ROUTER=n
+
+# nft add rule inet wbtest c counter log prefix "wbtest"
+Error: Could not process rule: No such file or directory
+                     ^^^^^^^                     <- NETFILTER_NETLINK_LOG=n
+```
+
+这两条对旁路由是硬伤：前者让 `ip rule` / 多路由表全废（按 fwmark 或源地址分流
+的基础），后者让 nft 的 `log` 语句直接不存在。
+
+### 澄清：CGROUP_FREEZER=n 不是问题
+
+`CONFIG_CGROUP_FREEZER` 只影响 cgroup **v1**。本机是 cgroup v2，
+`/sys/fs/cgroup/machine.slice/libpod-*.scope/cgroup.freeze` 实测存在，
+`podman pause` 走 v2 的 core freezer，不依赖该符号。不要为它重编。
+
+### 本轮补的 32 项
+
+| 类别 | 符号 |
+|---|---|
+| 策略路由 | `IP_ADVANCED_ROUTER` `IP_MULTIPLE_TABLES` `IPV6_MULTIPLE_TABLES` |
+| nfnetlink | `NETFILTER_NETLINK_LOG` `NETFILTER_NETLINK_QUEUE` `XT_TARGET_NFQUEUE` `XT_TARGET_REDIRECT` `XT_TARGET_IDLETIMER` `XT_MATCH_QUOTA` |
+| QoS 分类 | `XT_MATCH_PKTTYPE` `XT_MATCH_HL` |
+| nft | `NFT_OBJREF` `NF_TABLES_ARP` |
+| NAT 穿越 | `NF_CONNTRACK_FTP` `_SIP` `_TFTP` `_PPTP` |
+| 容器 | `BLK_DEV_THROTTLING` `OVERLAY_FS_INDEX` `TMPFS_XATTR` `TMPFS_POSIX_ACL` |
+| 文件系统 | `CIFS` `ISO9660_FS` `MSDOS_FS` `EXT4_FS_SECURITY` `BINFMT_MISC` |
+| 诊断/密码学 | `INET_UDP_DIAG` `CRYPTO_ARC4` `CRYPTO_DES` `CRYPTO_MD4` `DM_CRYPT` `CRC_CCITT` |
+
+`EXT4_FS_SECURITY` 单独说一句：它是 ext4 的 security xattr 支持，缺了 `setcap`
+在 ext4 上写了也不生效（`getcap` 读不到），rootless podman 会因此莫名其妙起不来。
+
+### 故意不补的（判过，对本机无意义或有害）
+
+蓝牙全家桶（板子无 BT 硬件）、触摸屏/鼠标、`KGDB`/`DEBUG_SPINLOCK`/`SCHEDSTATS`
+（调试用，带运行时开销）、`ANDROID` binder、`USB_ETH` gadget、`UHID`、
+`LOGO_LINUX_*`、`IP_VS`、`NFSD`、`STAGING`、`CFG80211_WEXT`/`MAC80211_MESH`。
