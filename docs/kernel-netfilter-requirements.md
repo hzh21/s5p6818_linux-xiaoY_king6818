@@ -139,3 +139,91 @@ ip link add ifb0 type ifb
 - **`XTABLES_COMPAT`**：只有当容器里跑 32 位 armhf 的 iptables 才需要（转译 32 位 getsockopt）。
   当前容器都是 arm64，没开。
 - **硬件 offload**：6818 的 GMAC 不支持，`NFT_FLOW_OFFLOAD` 开了也不会生效，纯属无害。
+
+## 八、CI 实测：断言抓到的问题（run #40 / #41）
+
+### run #40 —— IFB 被 Kconfig 静默丢弃
+
+第一次带 89 项断言构建，Configure 在 **2 分钟内**失败（而不是烧完 21 分钟）：
+
+```
+FATAL: 以下旁路由选项没进 .config（多半 depends 没满足）：
+ CONFIG_IFB
+--- IFB
+drivers/net/Kconfig-149-	tristate "Intermediate Functional Block support"
+drivers/net/Kconfig-150-	depends on NET_ACT_MIRRED || NFT_FWD_NETDEV
+```
+
+根因：只勾了 `IFB`，没勾 `NET_ACT_MIRRED`。而 `NET_ACT_MIRRED` 本身
+`depends on NET_CLS_ACT`（`net/sched/Kconfig:711`）。链路是：
+
+```
+NET_SCHED -> NET_CLS_ACT -> NET_ACT_MIRRED -> IFB
+```
+
+`NET_CLS_ACT` 在 nanopi3_linux_defconfig 里**本来就是 y**，所以真正缺的只有
+`NET_ACT_MIRRED` 一环。同时补齐 `NET_ACT_GACT`、`NET_CLS_FLOWER`，
+并把五项一起加进断言清单（89 → 94 项）。
+
+### run #41 —— 全部通过
+
+```
+旁路由 netfilter 选项 OK（… NET_SCHED NET_CLS_ACT NET_ACT_GACT
+NET_ACT_MIRRED NET_CLS_FLOWER IFB NET_SCH_CAKE NET_SCH_INGRESS
+NET_ACT_POLICE … 共 94 项）
+```
+
+产物：`king6818-5.10.252-Image-dtb`（11.2 MB）、`king6818-5.10.252-modules`（6.0 MB）。
+
+### 经验
+
+- 依赖链上任何一环为 n，Kconfig 就把下游符号**整条从 .config 里删掉**
+  （不是写 `is not set`），`grep "^CONFIG_X is not set"` 查不出来，只能反查 Kconfig。
+- 断言里打印 `depends on` 行的做法是有效的：一条报错直接给出原因，不用再翻源码。
+
+## 九、TCP 拥塞控制：BBR（第二轮补全）
+
+板上原状：
+
+```
+# CONFIG_TCP_CONG_ADVANCED is not set
+CONFIG_TCP_CONG_CUBIC=y
+CONFIG_DEFAULT_TCP_CONG="cubic"
+/proc/sys/net/ipv4/tcp_available_congestion_control -> reno cubic
+```
+
+即 BBR 完全不可用。原因与 IFB 一模一样：`net/ipv4/Kconfig` 里
+
+```
+menuconfig TCP_CONG_ADVANCED
+	bool "TCP: advanced congestion control"
+...
+if TCP_CONG_ADVANCED
+config TCP_CONG_BBR
+	tristate "BBR TCP"
+	default n
+endif
+```
+
+外层 `menuconfig` 为 n 时，`TCP_CONG_BBR` 在 `.config` 里**连 `is not set` 都不会出现**，
+grep 不到任何痕迹，只能从 `tcp_available_congestion_control` 反推。
+
+补法：
+
+```
+./scripts/config --enable CONFIG_TCP_CONG_ADVANCED
+./scripts/config --enable CONFIG_TCP_CONG_BBR
+```
+
+`CONFIG_DEFAULT_TCP_CONG` **保持 "cubic" 不动**。这样两种算法同时可用，
+要切 BBR 在运行时执行 `sysctl -w net.ipv4.tcp_congestion_control=bbr`，
+出问题直接切回 cubic，不需要重编。BBR 建议配 `net.core.default_qdisc=fq`
+（`CONFIG_NET_SCH_FQ` 已经是 y）。
+
+断言单独一组（不并进 netfilter 那 94 项，避免报错信息语义混淆）：
+
+```
+for s in CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR; do
+  grep -qE "^$s=y$" .config || { echo "FATAL: $s 没进 .config" >&2; ... exit 1; }
+done
+```
