@@ -363,6 +363,9 @@ jobs:
           ./scripts/config --enable CONFIG_CRYPTO_DES
           ./scripts/config --enable CONFIG_CRYPTO_MD4
           # LUKS 加密 U 盘/分区（存储全在 USB 上，留着备用）
+          # DM_CRYPT depends on BLK_DEV_DM（drivers/md/Kconfig:271），少这一层
+          # DM_CRYPT 会被整条丢掉 —— run #43 就是这样被抓到的。
+          ./scripts/config --enable CONFIG_BLK_DEV_DM
           ./scripts/config --enable CONFIG_DM_CRYPT
           ./scripts/config --enable CONFIG_CRC_CCITT
 
@@ -563,7 +566,7 @@ jobs:
             BLK_DEV_THROTTLING OVERLAY_FS_INDEX \
             TMPFS_XATTR TMPFS_POSIX_ACL \
             CIFS ISO9660_FS MSDOS_FS EXT4_FS_SECURITY BINFMT_MISC \
-            INET_UDP_DIAG CRYPTO_ARC4 CRYPTO_DES CRYPTO_MD4 DM_CRYPT CRC_CCITT"
+            INET_UDP_DIAG CRYPTO_ARC4 CRYPTO_DES CRYPTO_MD4 BLK_DEV_DM DM_CRYPT CRC_CCITT"
           miss4=""
           for s in $NF_414; do
             grep -qE "^CONFIG_$s=y$" .config || miss4="$miss4 CONFIG_$s"
